@@ -1,4 +1,5 @@
 import groovy.json.JsonSlurper
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -9,6 +10,12 @@ plugins {
 val secretsFile = rootProject.file("../Resources/secrets.json")
 val secrets: Map<*, *> = if (secretsFile.exists()) JsonSlurper().parse(secretsFile) as Map<*, *> else emptyMap<String, String>()
 val appVersion = rootProject.file("../VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "1.0.0"
+
+// Dedicated signing key (mobile/signing). Published APKs additionally carry a rotation lineage from the old
+// debug key — see scripts/release.sh — so installs of <= 2.1.0 update in place.
+val signingProps = Properties().apply {
+    rootProject.file("signing/signing.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
 
 android {
     namespace = "com.aliahad.ainewshot"
@@ -27,13 +34,26 @@ android {
         buildConfigField("String", "MIMO_KEY", "\"${secrets["mimoKey"] ?: ""}\"")
     }
 
+    signingConfigs {
+        if (signingProps.isNotEmpty()) create("release") {
+            storeFile = rootProject.file("signing/" + signingProps.getProperty("storeFile"))
+            storePassword = signingProps.getProperty("storePassword")
+            keyAlias = signingProps.getProperty("keyAlias")
+            keyPassword = signingProps.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
+        // Debug and release share the dedicated key, so either can be installed over the other.
+        val key = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        debug {
+            signingConfig = key
+        }
         release {
             optimization {
                 enable = false
             }
-            // No Play Store: sign release builds with the debug key so the APK installs anywhere.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = key
         }
     }
     compileOptions {

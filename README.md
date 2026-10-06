@@ -72,7 +72,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 - **Version:** taken from `VERSION` (versionCode = major·10000 + minor·100 + patch).
 - **API keys:** default keys are read from `Resources/secrets.json` at build time.
-- **Signing:** release APKs are signed with this Mac's Android debug key (no Play Store). Updates must be signed with the same key, or the old app has to be uninstalled first.
+- **Signing:** every build is signed with the project's own key in `mobile/signing/` (see *Signing* below).
 
 **Debug builds only:** trigger alerts, a podcast, or playback from the computer:
 ```bash
@@ -84,11 +84,23 @@ adb shell am broadcast -a com.aliahad.ainewshot.DEBUG_PLAY -p com.aliahad.ainews
 ## Releasing
 
 ```bash
-echo 2.1.0 > VERSION
-(cd mobile && ./gradlew assembleRelease)
-cp mobile/app/build/outputs/apk/release/app-release.apk build/AINewsHot-2.1.0.apk
-gh release create v2.1.0 build/AINewsHot-2.1.0.apk --title "AI News Hot 2.1.0 (Android)" --notes "…"
+echo 2.2.0 > VERSION
+mobile/scripts/release.sh              # → build/AINewsHot-2.2.0.apk (add --install to put it on the phone)
+gh release create v2.2.0 build/AINewsHot-2.2.0.apk --title "AI News Hot 2.2.0 (Android)" --notes "…"
 ```
+
+## Signing
+
+| File (`mobile/signing/`) | What it is |
+|---|---|
+| `release.jks` | The app's dedicated signing key (RSA 4096, valid 30 years) |
+| `signing.properties` | Passwords and aliases, read by Gradle and `release.sh` |
+| `legacy-debug.keystore` | The Android debug key that signed versions ≤ 2.1.0 |
+| `lineage.bin` | APK Signature Scheme v3 rotation proof: the old key handed over to `release.jks` |
+
+- Gradle signs **debug and release** builds with `release.jks`, so either installs over the other.
+- `release.sh` additionally signs with the lineage, so phones that still have a debug-key build (≤ 2.1.0) **update in place and keep their data**. Always publish with `release.sh`.
+- The repo is private, but anyone with access to it can sign APKs as this app. **Back up `mobile/signing/`**: if `release.jks` is lost, future updates can't install over existing copies, and people would have to uninstall first.
 
 ## Project layout
 
