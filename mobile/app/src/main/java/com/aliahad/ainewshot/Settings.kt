@@ -75,9 +75,14 @@ class Settings private constructor(ctx: Context) {
     var deepseekKey by str("deepseekKey", BuildConfig.DEEPSEEK_KEY)
     var mimoKey by str("mimoKey", BuildConfig.MIMO_KEY)
 
+    /** Checklist items the app can't read from the system; you confirm them once in Reliability setup. */
+    fun confirmed(key: String): Boolean? = if (p.getBoolean("confirmed_$key", false)) true else null
+    fun setConfirmed(key: String, value: Boolean) { p.edit().putBoolean("confirmed_$key", value).apply(); version.value++ }
+
     fun keywords(s: String) = s.split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
 
     companion object {
+        val CONFIRMABLE = setOf("saver", "float", "lockscreen", "ai", "recents", "focus")
         @Volatile private var instance: Settings? = null
         fun get(ctx: Context): Settings = instance ?: synchronized(this) {
             instance ?: Settings(ctx.applicationContext).also { instance = it }

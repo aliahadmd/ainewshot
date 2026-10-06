@@ -138,10 +138,21 @@ object PodcastPlayer {
             controller = c
             speed.value = Settings.get(ctx).podSpeed.toFloatOrNull() ?: 1f
             c.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(playing: Boolean) { isPlaying.value = playing }
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying.value = playing
+                    position.value = c.currentPosition / 1000.0
+                    // Only tick while audio is actually playing: no wake-ups when paused or in the background idle.
+                    ticker?.cancel()
+                    if (playing) ticker = scope.launch { while (true) { position.value = c.currentPosition / 1000.0; delay(500) } }
+                }
+                override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+                    position.value = c.currentPosition / 1000.0   // seeks show immediately
+                }
             })
-            ticker?.cancel()
-            ticker = scope.launch { while (true) { controller?.let { position.value = it.currentPosition / 1000.0 }; delay(250) } }
+            // Reconnecting to a session that is already playing: sync state and start ticking.
+            isPlaying.value = c.isPlaying
+            position.value = c.currentPosition / 1000.0
+            if (c.isPlaying) { ticker?.cancel(); ticker = scope.launch { while (true) { position.value = c.currentPosition / 1000.0; delay(500) } } }
             block(c)
         }, androidx.core.content.ContextCompat.getMainExecutor(ctx))
     }

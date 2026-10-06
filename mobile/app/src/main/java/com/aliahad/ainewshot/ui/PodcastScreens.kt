@@ -49,6 +49,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,6 +59,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
@@ -178,73 +186,29 @@ fun EpisodeScreen(id: String, onBack: () -> Unit) {
     val episodes by PodcastStudio.episodes.collectAsState()
     val ep = episodes.firstOrNull { it.id == id } ?: run { onBack(); return }
     val current by PodcastPlayer.current.collectAsState()
-    val playing by PodcastPlayer.isPlaying.collectAsState()
-    val pos by PodcastPlayer.position.collectAsState()
-    val speed by PodcastPlayer.speed.collectAsState()
     val loaded = current?.id == ep.id
     var tab by remember { mutableIntStateOf(0) }
-    var speedMenu by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
-    val curLine = if (loaded) PodcastPlayer.currentLine(ep) else null
-    LaunchedEffect(curLine, playing) { if (playing && curLine != null && tab == 0) listState.animateScrollToItem(curLine) }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text(ep.periodLabel) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(ep.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(ep.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(ep.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
             Text("${PodcastStudio.mmss(ep.duration)} · ${ep.notes.size} stories from ${ep.itemsScanned} items · " +
                 ep.lines.map { it.speaker }.distinct().filter { it != "J" }.sorted().joinToString(" & ") { ep.name(it) },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val t = if (loaded) pos else 0.0
-            Slider(value = t.toFloat().coerceIn(0f, ep.duration.toFloat()), valueRange = 0f..ep.duration.toFloat().coerceAtLeast(1f),
-                onValueChange = { if (loaded) PodcastPlayer.seek(it.toDouble()) else PodcastPlayer.play(ctx, ep, it.toDouble()) })
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(PodcastStudio.mmss(t), style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { PodcastPlayer.skip(-15.0) }, enabled = loaded) { Text("−15") }
-                FilledIconButton(onClick = { PodcastPlayer.toggle(ctx, ep) }, modifier = Modifier.size(56.dp)) {
-                    if (loaded && playing) Text("❚❚", fontWeight = FontWeight.Bold) else Icon(Icons.Default.PlayArrow, "Play", Modifier.size(32.dp))
-                }
-                TextButton(onClick = { PodcastPlayer.skip(30.0) }, enabled = loaded) { Text("+30") }
-                Box {
-                    TextButton(onClick = { speedMenu = true }) { Text("${speed}×") }
-                    DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-                        listOf(0.8f, 1f, 1.15f, 1.25f, 1.5f, 1.75f, 2f).forEach { r ->
-                            DropdownMenuItem(text = { Text("${r}×") }, onClick = { PodcastPlayer.setSpeed(ctx, r); speedMenu = false })
-                        }
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                Text(PodcastStudio.mmss(ep.duration), style = MaterialTheme.typography.bodySmall)
-            }
+            PlayerControls(ep, loaded)
         }
         SecondaryTabRow(selectedTabIndex = tab) {
             listOf("Transcript", "Chapters", "Show notes").forEachIndexed { i, l -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(l) }) }
         }
         when (tab) {
-            0 -> LazyColumn(state = listState, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                itemsIndexed(ep.lines, key = { _, l -> l.id }) { i, l ->
-                    Column {
-                        if (i == 0 || ep.lines[i - 1].chapter != l.chapter) ep.chapters.getOrNull(l.chapter)?.let {
-                            Text(it.title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
-                        }
-                        Column(Modifier.fillMaxWidth()
-                            .background(if (curLine == i) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
-                            .clickable { PodcastPlayer.play(ctx, ep, l.start) }.padding(8.dp)) {
-                            Text(ep.name(l.speaker), fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
-                                color = if (l.speaker == "B") Color(0xFFE07A1F) else MaterialTheme.colorScheme.primary)
-                            Text(l.text, style = MaterialTheme.typography.bodyMedium)
-                            if (l.direction.isNotBlank()) Text(l.direction, fontSize = 11.sp, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.outline)
-                        }
-                    }
-                }
-            }
+            0 -> Transcript(ep, loaded)
             1 -> Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ep.chapters.forEach { c ->
                     Card(Modifier.fillMaxWidth().clickable { PodcastPlayer.play(ctx, ep, c.start) }) {
                         Column(Modifier.padding(12.dp)) {
-                            Text("${PodcastStudio.mmss(c.start)}  ${c.title}", fontWeight = if (loaded && PodcastPlayer.currentChapter(ep) == c.id) FontWeight.Bold else FontWeight.Medium)
+                            Text("${PodcastStudio.mmss(c.start)}  ${c.title}", fontWeight = FontWeight.Medium)
                             c.stories.mapNotNull { ep.notes.getOrNull(it) }.forEach { n -> Links(n) }
                         }
                     }
@@ -263,6 +227,130 @@ fun EpisodeScreen(id: String, onBack: () -> Unit) {
     }
 }
 
+/**
+ * Player controls. Nothing here recomposes as the playhead moves: the seek bar reads the position while
+ * drawing, and the time label only changes once per second.
+ */
+@Composable
+private fun PlayerControls(ep: Episode, loaded: Boolean) {
+    val ctx = LocalContext.current
+    val playing by PodcastPlayer.isPlaying.collectAsState()
+    val posState = PodcastPlayer.position.collectAsState()
+    val speed by PodcastPlayer.speed.collectAsState()
+    var speedMenu by remember { mutableStateOf(false) }
+    SeekBar(ep.duration, if (loaded) posState else null) { t -> if (loaded) PodcastPlayer.seek(t) else PodcastPlayer.play(ctx, ep, t) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TimeLabel(if (loaded) posState else null)
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = { PodcastPlayer.skip(-15.0) }, enabled = loaded) { Text("−15") }
+        FilledIconButton(onClick = { PodcastPlayer.toggle(ctx, ep) }, modifier = Modifier.size(56.dp)) {
+            if (loaded && playing) Text("❚❚", fontWeight = FontWeight.Bold) else Icon(Icons.Default.PlayArrow, "Play", Modifier.size(32.dp))
+        }
+        TextButton(onClick = { PodcastPlayer.skip(30.0) }, enabled = loaded) { Text("+30") }
+        Box {
+            TextButton(onClick = { speedMenu = true }) { Text("${speed}×") }
+            DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
+                listOf(0.8f, 1f, 1.15f, 1.25f, 1.5f, 1.75f, 2f).forEach { r ->
+                    DropdownMenuItem(text = { Text("${r}×") }, onClick = { PodcastPlayer.setSpeed(ctx, r); speedMenu = false })
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Text(PodcastStudio.mmss(ep.duration), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun TimeLabel(pos: androidx.compose.runtime.State<Double>?) {
+    val sec by remember(pos) { derivedStateOf { pos?.value?.toInt() ?: 0 } }
+    Text(PodcastStudio.mmss(sec.toDouble()), style = MaterialTheme.typography.bodySmall)
+}
+
+/** Tap or drag to seek; seeks once when you let go. The playhead is drawn, not recomposed. */
+@Composable
+private fun SeekBar(duration: Double, pos: androidx.compose.runtime.State<Double>?, onSeek: (Double) -> Unit) {
+    var drag by remember { mutableStateOf<Float?>(null) }
+    val active = MaterialTheme.colorScheme.primary
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    val d = duration.coerceAtLeast(1.0)
+    Box(Modifier.fillMaxWidth().height(40.dp)
+        .pointerInput(d) { detectTapGestures { o -> onSeek((o.x / size.width).coerceIn(0f, 1f) * d) } }
+        .pointerInput(d) {
+            detectHorizontalDragGestures(
+                onDragStart = { o -> drag = (o.x / size.width).coerceIn(0f, 1f) },
+                onDragEnd = { drag?.let { onSeek(it * d) }; drag = null },
+                onDragCancel = { drag = null },
+            ) { change, _ -> drag = (change.position.x / size.width).coerceIn(0f, 1f) }
+        }
+        .drawBehind {
+            val f = drag ?: ((pos?.value ?: 0.0) / d).toFloat().coerceIn(0f, 1f)
+            val y = size.height / 2
+            val w = 5.dp.toPx()
+            drawLine(track, Offset(0f, y), Offset(size.width, y), strokeWidth = w, cap = StrokeCap.Round)
+            drawLine(active, Offset(0f, y), Offset(size.width * f, y), strokeWidth = w, cap = StrokeCap.Round)
+            drawCircle(active, radius = if (drag != null) 11.dp.toPx() else 8.dp.toPx(), center = Offset(size.width * f, y))
+        })
+}
+
+/**
+ * The transcript re-renders only when the spoken *line* changes (not 4×/s with the playhead).
+ * It follows along while playing, stops following as soon as you scroll, and offers "Follow along" to resume.
+ */
+@Composable
+private fun Transcript(ep: Episode, loaded: Boolean) {
+    val ctx = LocalContext.current
+    val playing by PodcastPlayer.isPlaying.collectAsState()
+    val posState = PodcastPlayer.position.collectAsState()
+    val curLine by remember(ep.id, loaded) {
+        derivedStateOf { if (loaded) ep.lines.indexOfLast { it.start <= posState.value + 0.05 } else -1 }
+    }
+    val listState = rememberLazyListState()
+    var follow by remember { mutableStateOf(true) }
+    var autoScrolling by remember { mutableStateOf(false) }
+    // A drag by the user (not our own animation) turns following off.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling -> if (scrolling && !autoScrolling) follow = false }
+    }
+    // Lyrics-style follow: only move when the spoken line drifts out of the comfortable middle of the screen,
+    // so the list scrolls a few times a minute instead of on every line.
+    LaunchedEffect(curLine, follow, playing) {
+        if (!follow || !playing || curLine < 0) return@LaunchedEffect
+        val info = listState.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { it.index == curLine }
+        val viewport = info.viewportEndOffset - info.viewportStartOffset
+        val comfortable = item != null && item.offset >= 0 && item.offset + item.size <= (viewport * 0.75).toInt()
+        if (!comfortable) {
+            autoScrolling = true
+            runCatching { listState.animateScrollToItem(curLine, scrollOffset = -(viewport * 0.15).toInt()) }
+            autoScrolling = false
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            itemsIndexed(ep.lines, key = { _, l -> l.id }) { i, l ->
+                val active = i == curLine
+                Column {
+                    if (i == 0 || ep.lines[i - 1].chapter != l.chapter) ep.chapters.getOrNull(l.chapter)?.let {
+                        Text(it.title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
+                    }
+                    Column(Modifier.fillMaxWidth()
+                        .background(if (active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, RoundedCornerShape(10.dp))
+                        .clickable { follow = true; PodcastPlayer.play(ctx, ep, l.start) }.padding(8.dp)) {
+                        Text(ep.name(l.speaker), fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                            color = if (l.speaker == "B") Color(0xFFE07A1F) else MaterialTheme.colorScheme.primary)
+                        Text(l.text, style = MaterialTheme.typography.bodyMedium)
+                        if (l.direction.isNotBlank()) Text(l.direction, fontSize = 11.sp, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        }
+        if (!follow && playing && curLine >= 0) {
+            androidx.compose.material3.ExtendedFloatingActionButton(onClick = { follow = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) { Text("Follow along") }
+        }
+    }
+}
+
 @Composable
 private fun Links(n: com.aliahad.ainewshot.ShowNote) {
     val ctx = LocalContext.current
@@ -277,14 +365,15 @@ fun MiniPlayer(onOpen: (String) -> Unit) {
     val ctx = LocalContext.current
     val ep by PodcastPlayer.current.collectAsState()
     val playing by PodcastPlayer.isPlaying.collectAsState()
-    val pos by PodcastPlayer.position.collectAsState()
+    val posState = PodcastPlayer.position.collectAsState()
     val e = ep ?: return
+    // Progress is read during drawing only, so the bar animates without recomposing the app's bottom bar.
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable { onOpen(e.id) }) {
-        LinearProgressIndicator(progress = { (pos / e.duration).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(2.dp))
+        LinearProgressIndicator(progress = { (posState.value / e.duration).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(2.dp))
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(e.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Text(PodStyle.SHOW + " · " + PodcastStudio.mmss(pos), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(PodStyle.SHOW, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { PodcastPlayer.toggle(ctx, e) }) {
                 if (playing) Text("❚❚", fontWeight = FontWeight.Bold) else Icon(Icons.Default.PlayArrow, "Play")

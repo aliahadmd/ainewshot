@@ -141,7 +141,8 @@ object PodcastStudio {
     suspend fun generate(ctx: Context, days: Int): Episode {
         state.value = StudioState(stage = 1, days = days)
         try {
-            val ep = run(ctx, days)
+            // Heavy work (JSON, PCM processing) stays off the main thread so the UI stays smooth.
+            val ep = withContext(Dispatchers.Default) { run(ctx, days) }
             episodes.value = listOf(ep) + episodes.value
             episodes.value.drop(30).forEach { delete(ctx, it) }
             set(6, "Ready · ${mmss(ep.duration)}")
@@ -255,7 +256,7 @@ object Editor {
         """.trimIndent()
         val chunks = items.indices.chunked(250)
         val sem = Semaphore(4)
-        var done = 0
+        val done = java.util.concurrent.atomic.AtomicInteger()
         val results = chunks.map { r ->
             async {
                 sem.withPermit {
@@ -275,7 +276,7 @@ object Editor {
                         }.isSuccess
                         if (ok) break
                     }
-                    done++; progress(done, chunks.size)
+                    progress(done.incrementAndGet(), chunks.size)
                     out
                 }
             }
@@ -476,8 +477,8 @@ object Recorder {
                 "[Guidance] ${l.direction.ifBlank { "Natural delivery." }}. ${PodStyle.ttsRule(s.podExpressiveness)} Natural American English, clear diction, podcast microphone close."
         }
         val sem = Semaphore(5)      // MiMo allows 100 RPM; 5 in flight is plenty and polite
-        var done = 0
-        var failures = 0
+        val done = java.util.concurrent.atomic.AtomicInteger()
+        val failures = java.util.concurrent.atomic.AtomicInteger()
         val out = lines.map { l ->
             async {
                 sem.withPermit {
@@ -493,14 +494,14 @@ object Recorder {
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Throwable) {
-                        Log.w(TAG, "TTS line ${l.id} failed", e); failures++; ByteArray(0)
+                        Log.w(TAG, "TTS line ${l.id} failed", e); failures.incrementAndGet(); ByteArray(0)
                     }
-                    done++; progress(done)
+                    progress(done.incrementAndGet())
                     pcm
                 }
             }
         }.awaitAll()
-        if (failures > max(2, lines.size / 8)) throw HttpError(502, "MiMo failed on $failures of ${lines.size} lines. Try again in a minute.")
+        if (failures.get() > max(2, lines.size / 8)) throw HttpError(502, "MiMo failed on ${failures.get()} of ${lines.size} lines. Try again in a minute.")
         out
     }
 

@@ -2,7 +2,13 @@ package com.aliahad.ainewshot
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +28,7 @@ data class FeedStatus(
     val error: String? = null,
     val note: String? = null,
     val held: Int = 0,
+    val interruptions: List<Long> = emptyList(),   // watchdog: times live checks stopped for > 20 min
 )
 
 /**
@@ -30,6 +37,8 @@ data class FeedStatus(
  * quiet start on first run, no stale alerts, quiet hours and a popups-per-hour cap.
  */
 object NewsRepo {
+    /** Process-wide scope for background work (kept alive by the live foreground service). */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val recent = MutableStateFlow<List<NewsItem>>(emptyList())
     val status = MutableStateFlow(FeedStatus())
 
@@ -61,6 +70,8 @@ object NewsRepo {
             val p = o.optJSONArray("pending") ?: JSONArray()
             pending += (0 until p.length()).map { NewsItem.fromJson(p.getJSONObject(it)) }
             bootMode = o.str("bootMode"); bootDone = o.optBoolean("bootDone"); lastPodcastDay = o.str("lastPodcastDay")
+            val gaps = o.optJSONArray("interruptions")?.let { a -> (0 until a.length()).map { a.getLong(it) } } ?: emptyList()
+            status.value = status.value.copy(lastCheck = if (o.isNull("lastCheck")) null else o.optLong("lastCheck"), interruptions = gaps)
         }
         status.value = status.value.copy(held = pending.size)
     }
@@ -74,22 +85,46 @@ object NewsRepo {
             .put("pending", JSONArray(pending.map { it.toJson() }))
             .put("bootMode", bootMode ?: JSONObject.NULL).put("bootDone", bootDone)
             .put("lastPodcastDay", lastPodcastDay ?: JSONObject.NULL)
+            .put("lastCheck", status.value.lastCheck ?: JSONObject.NULL)
+            .put("interruptions", JSONArray(status.value.interruptions.takeLast(50)))
         file(ctx).writeText(o.toString())
     }
 
-    suspend fun check(ctx: Context, force: Boolean = false) {
+    /** Runs entirely off the main thread: network on IO, parsing/filtering on Default. */
+    suspend fun check(ctx: Context, force: Boolean = false) = withContext(Dispatchers.Default) {
         load(ctx)
-        if (!force && System.currentTimeMillis() < backoffUntil) return
-        if (!mutex.tryLock()) return
+        if (!force && System.currentTimeMillis() < backoffUntil) return@withContext
+        if (!mutex.tryLock()) return@withContext
         try {
+            val s = Settings.get(ctx)
+            // Watchdog: a long silence while live alerts are on means the system froze or killed us.
+            val prev = status.value.lastCheck
+            if (s.liveAlerts && prev != null && System.currentTimeMillis() - prev > 20 * 60_000L) {
+                status.value = status.value.copy(interruptions = (status.value.interruptions + prev).takeLast(50))
+                Log.w(TAG, "watchdog: no check for ${(System.currentTimeMillis() - prev) / 60_000} min")
+            }
             status.value = status.value.copy(checking = true)
             checkNews(ctx)
             flushPending(ctx)
             maybeMorningPodcast(ctx)
-            save(ctx)
+            withContext(Dispatchers.IO) { save(ctx) }
+            Waker.schedule(ctx)
+            Speaker.prefetch(ctx, recent.value.take(8))
         } finally {
             status.value = status.value.copy(checking = false, held = pending.size)
             mutex.unlock()
+        }
+    }
+
+    /** Reliability test: a real alert after [seconds], so you can lock the phone or switch apps first. */
+    fun scheduleTest(ctx: Context, seconds: Int) {
+        val app = ctx.applicationContext
+        appScope.launch {
+            delay(seconds * 1000L)
+            load(app)
+            val sample = recent.value.firstOrNull() ?: NewsItem(id = "test", title = "This is a test alert",
+                summary = "If you can read and hear this, news will reach you.", sourceName = "AI News Hot")
+            deliver(app, listOf(sample.copy(id = "test-${System.currentTimeMillis()}")), bypassRate = true)
         }
     }
 
@@ -139,7 +174,8 @@ object NewsRepo {
             if (bootstrap) { bootDone = true; return }
 
             val maxAge = System.currentTimeMillis() - s.maxAlertAgeHours * 3_600_000L
-            val alerts = news.filter { it.discoveredAt >= maxAge && shouldAlert(it, s) }
+            // With "Live alerts" off the feed still refreshes (backup checks), but nothing pops up.
+            val alerts = if (!s.liveAlerts) emptyList() else news.filter { it.discoveredAt >= maxAge && shouldAlert(it, s) }
             Log.i(TAG, "news: ${fresh.size} new, ${alerts.size} alert(s)")
             deliver(ctx, alerts)
         } catch (e: HttpError) {
@@ -194,7 +230,7 @@ object NewsRepo {
         val s = Settings.get(ctx)
         val now = System.currentTimeMillis()
         popupTimes.removeAll { it < now - 3_600_000 }
-        if (pending.isEmpty() || inQuietHours(s) || popupTimes.size >= s.maxPerHour) return
+        if (pending.isEmpty() || !s.liveAlerts || inQuietHours(s) || popupTimes.size >= s.maxPerHour) return
         val items = pending.toList()
         pending.clear()
         popupTimes += now

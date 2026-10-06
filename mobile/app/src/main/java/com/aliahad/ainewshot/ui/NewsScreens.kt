@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -55,7 +56,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aliahad.ainewshot.AIHot
-import com.aliahad.ainewshot.Alerts
 import com.aliahad.ainewshot.NewsItem
 import com.aliahad.ainewshot.NewsRepo
 import com.aliahad.ainewshot.Settings
@@ -65,19 +65,17 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeedScreen(onOpen: (NewsItem) -> Unit, onSettings: () -> Unit) {
+fun FeedScreen(onOpen: (NewsItem) -> Unit, onSetup: () -> Unit) {
     val ctx = LocalContext.current
-    val items by NewsRepo.recent.collectAsState()
-    val status by NewsRepo.status.collectAsState()
     val scope = rememberCoroutineScope()
-    var filter by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { NewsRepo.check(ctx) }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    val status by NewsRepo.status.collectAsState()
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = {
             Column {
                 Text("AI News Hot", fontWeight = FontWeight.Bold)
-                val line = status.error ?: status.note ?: status.lastCheck?.let { "Checked ${ago(it)}" + if (status.held > 0) " · ${status.held} held" else "" } ?: "Connecting…"
+                val line = status.error ?: status.note ?: status.lastCheck?.let { "Live · checked ${ago(it)}" + if (status.held > 0) " · ${status.held} held" else "" } ?: "Connecting…"
                 Text(line, style = MaterialTheme.typography.bodySmall,
                     color = if (status.error != null || status.note != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -86,16 +84,85 @@ fun FeedScreen(onOpen: (NewsItem) -> Unit, onSettings: () -> Unit) {
             if (status.checking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             else IconButton(onClick = { scope.launch { NewsRepo.check(ctx, force = true) } }) { Icon(Icons.Default.Refresh, "Check now") }
         })
-        PermissionBanner(onSettings)
-        Column(Modifier.padding(horizontal = 12.dp)) { ChoiceRow(null, listOf(0 to "Latest", 1 to "Alerted"), filter) { filter = it } }
-        PullToRefreshBox(isRefreshing = status.checking, onRefresh = { scope.launch { NewsRepo.check(ctx, force = true) } }, modifier = Modifier.fillMaxSize()) {
-            val rows = items.filter { filter == 0 || it.alerted }
-            LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
-                if (rows.isEmpty()) item {
-                    Text(if (status.lastCheck == null) "Loading the latest first-hand AI news…" else "Nothing here yet.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
+        SetupBanner(onSetup)
+        androidx.compose.material3.PrimaryTabRow(selectedTabIndex = tab) {
+            val first = when (Settings.get(ctx).feedMode) { "selected" -> "Alerts"; "all" -> "Alerts"; else -> "First-hand" }
+            listOf(first, "Curated", "All news").forEachIndexed { i, l ->
+                androidx.compose.material3.Tab(selected = tab == i, onClick = { tab = i }, text = { Text(l) })
+            }
+        }
+        when (tab) {
+            0 -> FirstHandList(onOpen)
+            1 -> BrowseList("selected", onOpen)
+            else -> BrowseList("all", onOpen)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FirstHandList(onOpen: (NewsItem) -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val items by NewsRepo.recent.collectAsState()
+    val status by NewsRepo.status.collectAsState()
+    LaunchedEffect(Unit) { NewsRepo.check(ctx) }
+    PullToRefreshBox(isRefreshing = status.checking, onRefresh = { scope.launch { NewsRepo.check(ctx, force = true) } }, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
+            item {
+                Text(when (Settings.get(ctx).feedMode) {
+                    "selected" -> "Curated news you're alerted about (Settings › Alerts)."
+                    "all" -> "All news you're alerted about (Settings › Alerts)."
+                    else -> "Official announcements — these are the ones that pop up."
+                }, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (items.isEmpty()) item {
+                Text(if (status.lastCheck == null) "Loading the latest first-hand AI news…" else "Nothing here yet.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
+            }
+            items(items, key = { it.id }) { NewsCard(it) { onOpen(it) } }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BrowseList(mode: String, onOpen: (NewsItem) -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val feed by com.aliahad.ainewshot.Browse.feeds.getValue(mode).collectAsState()
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(mode) {
+        val f = com.aliahad.ainewshot.Browse.feeds.getValue(mode).value
+        if (f.items.isEmpty() || System.currentTimeMillis() - (f.updated ?: 0) > 10 * 60_000) com.aliahad.ainewshot.Browse.refresh(ctx, mode)
+    }
+    // Load the next page when we get within 8 items of the end.
+    val nearEnd by androidx.compose.runtime.remember {
+        androidx.compose.runtime.derivedStateOf {
+            val last = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= list.layoutInfo.totalItemsCount - 8
+        }
+    }
+    LaunchedEffect(nearEnd, feed.items.size) { if (nearEnd && feed.items.isNotEmpty()) com.aliahad.ainewshot.Browse.more(ctx, mode) }
+
+    PullToRefreshBox(isRefreshing = feed.loading && feed.items.isEmpty(), onRefresh = { scope.launch { com.aliahad.ainewshot.Browse.refresh(ctx, mode) } },
+        modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
+            item {
+                Text(if (mode == "all") "Everything from the last 7 days, newest first. Translated as you scroll."
+                    else "AIHOT's editors' picks from the last 7 days — official sources plus the best coverage and commentary.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(feed.items, key = { it.id }) { NewsCard(it) { onOpen(it) } }
+            item {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    when {
+                        feed.error != null -> TextButton(onClick = { scope.launch { com.aliahad.ainewshot.Browse.more(ctx, mode) } }) { Text("Couldn't load — retry") }
+                        feed.loading -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                        feed.end -> Text("That's everything from the last 7 days.", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
-                items(rows, key = { it.id }) { NewsCard(it) { onOpen(it) } }
             }
         }
     }
@@ -121,9 +188,8 @@ fun NewsCard(item: NewsItem, onClick: () -> Unit) {
 }
 
 @Composable
-fun PermissionBanner(onSettings: () -> Unit) {
+fun SetupBanner(onSetup: () -> Unit) {
     val ctx = LocalContext.current
-    val s = Settings.get(ctx)
     // Re-check whenever the app comes back to the foreground (e.g. after granting in system settings).
     var resumed by remember { mutableIntStateOf(0) }
     val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -131,25 +197,22 @@ fun PermissionBanner(onSettings: () -> Unit) {
         val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumed++ }
         owner.lifecycle.addObserver(o); onDispose { owner.lifecycle.removeObserver(o) }
     }
-    if (resumed < 0) return
-    val missing = buildList {
-        if (!Alerts.canNotify(ctx)) add("notifications")
-        if (s.popupMode == "fullscreen" && !Alerts.canOverlay(ctx)) add("pop-up over other apps")
-        if (!Alerts.canFullScreen(ctx)) add("full-screen alerts")
-    }
-    if (missing.isEmpty()) return
-    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+    val missing = remember(resumed) { Setup.missingCritical(ctx) }
+    val gaps = NewsRepo.status.collectAsState().value.interruptions.count { it > System.currentTimeMillis() - 86_400_000 }
+    if (missing.isEmpty() && gaps == 0) return
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onSetup),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.onErrorContainer)
-            Text("Allow ${missing.joinToString(", ")} so news can pop up.", Modifier.weight(1f).padding(horizontal = 10.dp),
+            Text(if (missing.isNotEmpty()) "${missing.size} setting${if (missing.size > 1) "s" else ""} could stop news from reaching you"
+                else "Live alerts were interrupted $gaps× today", Modifier.weight(1f).padding(horizontal = 10.dp),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-            TextButton(onClick = onSettings) { Text("Fix") }
+            TextButton(onClick = onSetup) { Text("Fix") }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ItemScreen(item: NewsItem, onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -168,11 +231,12 @@ fun ItemScreen(item: NewsItem, onBack: () -> Unit) {
                     .putExtra(Intent.EXTRA_TEXT, "${item.title}\n${item.link ?: ""}"), "Share"))
             }) { Icon(Icons.Default.Share, "Share") }
         })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Pill(AIHot.categoryLabel(item.category))
                 if (item.firstParty) Pill("✓ Official source", Color(0x3322AA55), Color(0xFF1E8E3E))
-                item.tags.take(3).forEach { Pill(AIHot.tagEn(it), MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant) }
+                item.tags.map { AIHot.tagEn(it) }.distinct().filter { it != AIHot.categoryLabel(item.category) }.take(4)
+                    .forEach { Pill(it, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             Text(item.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             item.originalTitle?.takeIf { it != item.title && Translator.isLatin(it) }?.let {
@@ -189,12 +253,17 @@ fun ItemScreen(item: NewsItem, onBack: () -> Unit) {
             }
             Text(listOfNotNull(ago(item.publishedAt ?: item.discoveredAt), item.score?.let { "AIHOT score $it" }, item.relevance?.let { "for you $it" }).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { item.link?.let { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } }) { Text("Read article") }
-                FilledTonalButton(onClick = { Speaker.toggle(ctx, item) }) {
-                    Text(when { preparing == item.id -> "Preparing…"; playing == item.id -> "Stop"; else -> "Listen" })
+            item.aihotUrl?.let { url -> TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }) { Text("Open on AIHOT") } }
+            explain?.let { Card { Column(Modifier.padding(14.dp)) { MarkdownText(it) } } }
+        }
+        // Actions stay on screen no matter how long the story is.
+        androidx.compose.material3.Surface(tonalElevation = 3.dp) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { item.link?.let { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } }, modifier = Modifier.weight(1f)) { Text("Read") }
+                FilledTonalButton(onClick = { Speaker.toggle(ctx, item) }, modifier = Modifier.weight(1f)) {
+                    Text(when { preparing == item.id -> "Starting…"; playing == item.id -> "Stop"; else -> "Listen" })
                 }
-                OutlinedButton(enabled = !explaining, onClick = {
+                OutlinedButton(enabled = !explaining, modifier = Modifier.weight(1f), onClick = {
                     explaining = true
                     scope.launch {
                         explain = runCatching { Translator.explain(item, Settings.get(ctx)) }.getOrElse { "Couldn't explain: ${it.message}" }
@@ -202,8 +271,6 @@ fun ItemScreen(item: NewsItem, onBack: () -> Unit) {
                     }
                 }) { Text(if (explaining) "Thinking…" else "Explain") }
             }
-            item.aihotUrl?.let { url -> TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }) { Text("Open on AIHOT") } }
-            explain?.let { Card { Column(Modifier.padding(14.dp)) { MarkdownText(it) } } }
         }
     }
 }

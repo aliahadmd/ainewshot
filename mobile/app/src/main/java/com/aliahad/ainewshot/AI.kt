@@ -129,6 +129,21 @@ object Translator {
         .take(12).joinToString(". ")
 }
 
+/** "Test keys" in Settings: a cheap real call to each service. */
+object KeyCheck {
+    suspend fun deepseek(key: String): String = runCatching {
+        if (key.isBlank()) return "No key"
+        val r = DeepSeek(key, "deepseek-flash").chat("Reply with the single word OK.", "ping", json = false, maxTokens = 5)
+        if (r.isNotBlank()) "✓ Working" else "No reply"
+    }.getOrElse { e -> if (e is HttpError && e.code == 401) "✗ Key rejected" else "✗ ${e.message?.take(80)}" }
+
+    suspend fun mimo(ctx: Context, key: String): String = runCatching {
+        if (key.isBlank()) return "No key"
+        val pcm = MiMo.pcm(ctx, "Hi.", "Calm.", "Mia", key)
+        if (pcm.isNotEmpty()) "✓ Working" else "No audio"
+    }.getOrElse { e -> if (e is HttpError && e.code == 401) "✗ Key rejected" else "✗ ${e.message?.take(80)}" }
+}
+
 // MARK: Xiaomi MiMo TTS
 
 object MiMo {
@@ -141,7 +156,7 @@ object MiMo {
     fun voiceLabel(v: String) = if (v.startsWith("file:")) "Custom — " + v.removePrefix("file:").substringBeforeLast('.') else v
 
     /** Raw 24 kHz mono PCM16. `style` → user message (director mode); `text` → assistant message with (style) / [tags]. */
-    suspend fun pcm(ctx: Context, text: String, style: String, voice: String, key: String): ByteArray {
+    suspend fun pcm(ctx: Context, text: String, style: String, voice: String, key: String, onChunk: ((ByteArray) -> Unit)? = null): ByteArray {
         var model = "mimo-v2.5-tts"
         var voiceParam = voice
         if (voice.startsWith("file:")) {
@@ -150,10 +165,19 @@ object MiMo {
             val mime = if (f.name.endsWith(".mp3")) "audio/mpeg" else "audio/wav"
             voiceParam = "data:$mime;base64," + Base64.encodeToString(f.readBytes(), Base64.NO_WRAP)
         }
-        return request(model, style, text, JSONObject().put("format", "pcm16").put("voice", voiceParam), key)
+        return request(model, style, text, JSONObject().put("format", "pcm16").put("voice", voiceParam), key, onChunk)
     }
 
-    private suspend fun request(model: String, user: String, assistant: String, audio: JSONObject, key: String): ByteArray {
+    /** Expected-length window for a script, used to reject or cut "run-on" takes. */
+    fun limits(text: String): Triple<Double, Double, Double> {
+        val spoken = text.replace(Regex("""\([^)]*\)|\[[^\]]*]"""), " ")
+        val words = max(1, spoken.split(Regex("\\s+")).count { it.isNotBlank() }).toDouble()
+        val tags = text.count { it == '[' }.toDouble()
+        return Triple(words * 0.14, words * 0.42, words * 0.8 + 4 + tags * 1.5)   // min, expected, max seconds
+    }
+
+    private suspend fun request(model: String, user: String, assistant: String, audio: JSONObject, key: String,
+                                onChunk: ((ByteArray) -> Unit)? = null): ByteArray {
         if (key.isBlank()) throw HttpError(401, "Add a MiMo API key in Settings.")
         val body = JSONObject()
             .put("model", model)
@@ -168,11 +192,27 @@ object MiMo {
                 JSONObject(payload).getJSONArray("choices").getJSONObject(0).optJSONObject("delta")
                     ?.optJSONObject("audio")?.str("data")
             }.getOrNull() ?: return@postStream
-            out.write(Base64.decode(data, Base64.DEFAULT))
+            val chunk = Base64.decode(data, Base64.DEFAULT)
+            out.write(chunk)
+            onChunk?.invoke(chunk)
         }
         if (out.size() == 0) throw HttpError(502, "MiMo returned no audio")
         return out.toByteArray()
     }
+
+    /** Copy a 10–30 s recording in as a VoiceClone reference (MiMo limit: 10 MB once base64-encoded). */
+    fun importVoice(ctx: Context, uri: android.net.Uri, name: String): String {
+        val mime = ctx.contentResolver.getType(uri) ?: ""
+        val ext = if (mime.contains("mpeg") || mime.contains("mp3")) "mp3" else "wav"
+        val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw HttpError(400, "Couldn't read the file")
+        if (bytes.size > 7_000_000) throw HttpError(413, "Recording must be under 7 MB (MiMo allows 10 MB base64)")
+        if (ext == "wav" && !(bytes.size > 12 && String(bytes, 0, 4) == "RIFF")) throw HttpError(415, "Use a WAV or MP3 recording")
+        val file = name.trim().ifBlank { "My voice" }.replace(Regex("[^A-Za-z0-9 _-]"), "").replace(" ", "-") + "." + ext
+        File(voiceDir(ctx), file).writeBytes(bytes)
+        return file
+    }
+
+    fun deleteVoice(ctx: Context, file: String) { File(voiceDir(ctx), file).delete() }
 
     /** VoiceDesign renders a brand-new voice per call, so we keep one sample and reuse it via VoiceClone. */
     suspend fun design(ctx: Context, name: String, description: String, key: String): String {
@@ -188,12 +228,8 @@ object MiMo {
      * Judge each take against the word count, retry bad ones, and as a last resort cap the closest take.
      */
     suspend fun checkedPcm(ctx: Context, text: String, style: String, voice: String, key: String, attempts: Int = 4): ByteArray {
-        val spoken = text.replace(Regex("""\([^)]*\)|\[[^\]]*]"""), " ")
-        val words = max(1, spoken.split(Regex("\\s+")).count { it.isNotBlank() }).toDouble()
-        val tags = (text.count { it == '[' }).toDouble()
-        val expected = words * 0.42
-        val maxSec = words * 0.8 + 4 + tags * 1.5
-        val minSec = words * 0.14
+        val (minSec, expected, maxSec) = limits(text)
+        val words = expected / 0.42
         var best: Pair<ByteArray, Double>? = null
         var lastError: Throwable? = null
         for (attempt in 0 until attempts) {

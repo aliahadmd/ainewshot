@@ -81,9 +81,11 @@ private fun Root(tabState: androidx.compose.runtime.MutableIntState, episodeStat
     var episode by episodeState
     var item by remember { mutableStateOf<NewsItem?>(null) }
     var doc by remember { mutableStateOf<DocRequest?>(null) }
+    var setup by remember { mutableStateOf(false) }
 
-    BackHandler(item != null || doc != null || episode != null) {
+    BackHandler(item != null || doc != null || episode != null || setup) {
         when {
+            setup -> setup = false
             item != null -> item = null
             doc != null -> doc = null
             else -> episode = null
@@ -96,7 +98,7 @@ private fun Root(tabState: androidx.compose.runtime.MutableIntState, episodeStat
             NavigationBar {
                 listOf(Triple("News", Icons.Default.Home, 0), Triple("Podcast", Icons.Default.PlayArrow, 1),
                     Triple("Reports", Icons.AutoMirrored.Filled.List, 2), Triple("Settings", Icons.Default.Settings, 3)).forEach { (label, icon, i) ->
-                    NavigationBarItem(selected = tab == i, onClick = { tab = i; item = null; doc = null; if (i != 1) episode = null },
+                    NavigationBarItem(selected = tab == i, onClick = { tab = i; item = null; doc = null; setup = false; if (i != 1) episode = null },
                         icon = { Icon(icon, null) }, label = { Text(label) })
                 }
             }
@@ -104,13 +106,14 @@ private fun Root(tabState: androidx.compose.runtime.MutableIntState, episodeStat
     }) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when {
+                setup -> com.aliahad.ainewshot.ui.SetupScreen(onBack = { setup = false })
                 item != null -> ItemScreen(item!!, onBack = { item = null })
                 doc != null -> DocScreen(doc!!, onBack = { doc = null })
                 tab == 1 && episode != null -> EpisodeScreen(episode!!, onBack = { episode = null })
-                tab == 0 -> FeedScreen(onOpen = { item = it }, onSettings = { tab = 3 })
+                tab == 0 -> FeedScreen(onOpen = { item = it }, onSetup = { setup = true })
                 tab == 1 -> PodcastScreen(onOpen = { episode = it })
                 tab == 2 -> ReportsScreen(onOpen = { doc = it })
-                else -> SettingsScreen()
+                else -> SettingsScreen(onSetup = { setup = true })
             }
         }
     }
