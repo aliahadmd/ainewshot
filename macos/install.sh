@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install the latest AI News Hot release on this Mac.
+# Install the (deprecated) macOS app, last release v1.0.0.
 #
 #   gh auth login            # once, if you haven't (the repo is private)
 #   bash install.sh
@@ -18,7 +18,8 @@ if [ "$(sw_vers -productVersion | cut -d. -f1)" -lt 26 ]; then
 fi
 
 if command -v gh >/dev/null; then
-  gh release download --repo "$REPO" --pattern 'AINewsHot-*.zip' --dir "$TMP"
+  # The macOS app is deprecated; its last release is v1.0.0 (newer releases are Android-only).
+  gh release download v1.0.0 --repo "$REPO" --pattern 'AINewsHot-*.zip' --dir "$TMP"
 elif ls "$HOME"/Downloads/AINewsHot-*.zip >/dev/null 2>&1; then
   cp "$(ls -t "$HOME"/Downloads/AINewsHot-*.zip | head -1)" "$TMP/"
 else

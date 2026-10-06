@@ -1,4 +1,5 @@
 #!/bin/bash
+# DEPRECATED (macOS app is no longer maintained; see ../mobile).
 # Builds AINewsHot.app (menu-bar agent, universal: Apple Silicon + Intel) into ./build.
 #   scripts/build-app.sh            # build only
 #   scripts/build-app.sh --install  # build, copy to ~/Applications, relaunch
@@ -20,7 +21,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/AINewsHot"
 # Default API keys, copied into the user's private settings on first launch.
-[ -f Resources/secrets.json ] && cp Resources/secrets.json "$APP/Contents/Resources/secrets.json"
+[ -f ../Resources/secrets.json ] && cp ../Resources/secrets.json "$APP/Contents/Resources/secrets.json"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

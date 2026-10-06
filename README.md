@@ -1,124 +1,88 @@
 # AI News Hot
 
-A native macOS menu-bar app that watches [aihot.news](https://aihot.news/agent) and pushes the AI news that matters into a popup you can't miss. Everything is translated to English and can be read aloud.
+An Android app that keeps you up to date on AI. It watches [aihot.news](https://aihot.news/agent) live, translates everything to English, and pops important news up in front of whatever you're doing, reading it aloud with a natural voice. It can also produce an AI podcast covering the last day, three days or week of AI news.
 
-## Build & run
+> The original macOS menu-bar app is **deprecated**. It lives in [`macos/`](macos/README.md), and its last release is v1.0.0.
 
-```bash
-scripts/build-app.sh            # builds build/AINewsHot.app
-scripts/build-app.sh --install  # copies it to ~/Applications and launches it (needed for "Launch at login")
-```
+## Install
 
-You need Xcode installed (the script points `DEVELOPER_DIR` at `/Applications/Xcode.app`, because SwiftUI macros aren't in Command Line Tools).
+Requires Android 10 or later. It's tested on a Redmi K80 Pro running HyperOS 4 / Android 17.
 
-On the Mac, API keys live in `~/Library/Application Support/AINewsHot/secrets.json` (mode 0600). The defaults are seeded from `Resources/secrets.json`. You can edit them in Settings › Translation & AI and Settings › Audio.
+1. On the phone, open the latest release on the repo's [Releases page](https://github.com/aliahadmd/ainewshot/releases) and download `AINewsHot-<version>.apk`. The repo is private, so sign in to GitHub in the phone's browser first, or copy the APK over from a computer.
+2. Open the APK and allow your browser or file manager to install unknown apps. HyperOS may run a security scan first; choose **Install anyway**.
+3. Open **AI News Hot**. Allow notifications, then go to **Settings › Permissions & reliability** and tap **Allow** on every row.
+4. **Xiaomi / HyperOS only:** in AI News Hot's app info, turn on **Autostart**, set **Battery saver** to *No restrictions*, and under *Other permissions* enable **Display pop-up windows while running in the background**. The *Open HyperOS app permissions* button in Settings takes you there.
 
-## Install on another Mac
+The APK includes default DeepSeek and MiMo API keys, so it works right away. You can change them in **Settings › API keys**.
 
-Requires macOS 26 or later. Works on Apple Silicon and Intel.
+To update, install a newer APK over the old one; your settings and episodes are kept.
 
-**Easiest (GitHub CLI):**
-```bash
-brew install gh && gh auth login
-gh repo clone aliahadmd/ainewshot && cd ainewshot && bash install.sh
-```
+## What it does
 
-**Manual:**
-1. Download `AINewsHot-<version>.zip` from the repo's **Releases** page.
-2. Unzip it and move `AINewsHot.app` to `~/Applications` (or `/Applications`).
-3. The app isn't notarized (there's no paid Apple Developer account), so macOS blocks it on first open. Fix it either way:
-   - run `xattr -dr com.apple.quarantine ~/Applications/AINewsHot.app`, **or**
-   - try to open it once, then go to System Settings › Privacy & Security › **Open Anyway**.
-
-The app ships with API keys in `Resources/secrets.json`. They are copied to `~/Library/Application Support/AINewsHot/secrets.json` (mode 0600) on first launch. Change them any time in Settings.
-
-## Releasing a new version
-
-```bash
-echo 1.1.0 > VERSION
-scripts/build-app.sh --zip
-gh release create v1.1.0 build/AINewsHot-1.1.0.zip --title "v1.1.0" --notes "…"
-```
-
-## How it works
-
-| Stage | What happens |
+| Feature | How |
 |---|---|
-| **Fetch** | **First-hand feed (default)** = the web's [精选 › 只看一手](https://aihot.news/?channel=firstParty): `GET /api/site/timeline?channel=firstParty`, the same endpoint the website uses. This list decides *which* items to show, and the official `GET /api/v1/items` adds each one's English original title and article link (matched by ID). Every request uses `If-None-Match`, so a check where nothing changed is a 304. Polls every 90 s and backs off on 429. |
-| **Self-healing** | The site endpoint is undocumented. Each response teaches the app which sources are first-hand (OpenAI, Anthropic, Google, Hugging Face…). If the endpoint breaks, the app keeps working off the official API filtered to those learned sources, and the menu shows a warning. |
-| **Translate** | DeepSeek (`deepseek-flash`, thinking disabled, about 6 s for 8 items) translates the title, summary and "why it matters" in one batched JSON call. The same call also writes a ≤45-word script to read aloud and gives a 0–100 relevance score against your profile. If DeepSeek fails, the app falls back to **Apple's on-device Translation framework** (free, offline, no AI), then to the source's own English headline (AIHOT includes `originalTitle`). |
-| **Filter** | Feed: First-hand (~8 a day, recommended), All curated (~15–25 a day) or Everything. Also categories, minimum score, *always* and *never* keywords (these also match AIHOT tags such as Anthropic, Agent, Coding), an optional AI relevance threshold, and no alerts for items older than 12 h. Trending alerts are optional and off by default. |
-| **Prepare audio** | The MiMo TTS clip (voice `Mia`, streaming PCM16 → WAV) is generated **before** the popup opens, so the voice starts the moment it appears. MiMo takes 5–20 s per clip. The fallback is the macOS system voice. |
-| **Interrupt** | A centred floating panel on every Space, including full-screen apps, with an optional dimmed backdrop. Three or more stories at once become one **digest** with a spoken rundown. |
+| **Live first-hand news** | The same list as aihot.news › 精选 › 只看一手: announcements straight from OpenAI, Anthropic, Google, Hugging Face and others, about 8 a day. A foreground service checks every 90 s (cheap 304s when nothing changed). WorkManager runs a 15-min backup check, and live alerts restart after a reboot. |
+| **English everywhere** | DeepSeek (`deepseek-flash`, thinking off) translates and summarizes in batches, and writes a short spoken version of each story. If it's unavailable, the app shows the source's own English headline. |
+| **Forced popup** | With *Display over other apps* allowed, a full-screen alert card opens over whatever app you're in. On the lock screen it wakes the display. Taps are ignored for the first 0.8 s so you can't hit a button by accident. Three or more stories arrive as one digest with a spoken rundown. |
+| **Voice** | Xiaomi MiMo TTS clips are generated *before* the popup appears, so the voice starts instantly. Each take is checked against its expected length and re-recorded if MiMo runs on. Other audio ducks while it speaks. It stays silent during calls and while a podcast is playing. The phone's own voice is the fallback. |
+| **Respectful** | Quiet hours, a popups-per-hour cap, "In 30 min" snooze, *always* and *never* keywords (they also match AIHOT tags such as Anthropic, Agent, Coding), and no alerts for items older than 12 h. |
+| **AI podcast** | Choose **1 / 3 / 7 days**, then: collect *all* news (about 450 items a day) → editor merges duplicates and ranks stories (lenient) → plan deep dives, briefs and quick hits, with **every** story in the show notes → writer (DeepSeek V4 Pro) → MiMo records each line → loudness matching → AAC. One or two hosts, plus tone, emotion level, sung jingle, and custom voices (VoiceDesign once, then VoiceClone). Plays through Media3 with lock-screen and Bluetooth controls and 0.8–2× speed. Episodes are saved to **Music/AI News Hot**. It can also prepare a morning episode automatically. |
+| **Reports** | AIHOT's daily, trending, weekly and monthly reports, translated and ready to listen to. |
+| **Explain** | A short developer-focused brief on any story: what happened, why it matters, what you could do, and open questions. |
 
-## AI podcast
+### MiMo style control used by the podcast
+- **Director mode** in the user message: `[Character]` is the host persona, `[Scene]` is the show tone and current segment, `[Guidance]` is that line's direction.
+- A leading **`(style)` tag** and inline **`[audio tags]`** (`[laughs]`, `[sighs]`, `[pause]`…) in the assistant text. Each emotion level has a target tag density, and a safety net fills in missing tags from the director notes.
+- **Singing mode** for the optional intro jingle.
 
-In the menu bar, under **Podcast briefing**, choose **1 day**, **3 days** or **7 days**. A 1-day episode takes about 3 minutes to produce.
+## Build from source
 
-| Stage | What happens |
-|---|---|
-| Collect | Fetches *all* news for the period (≈450 items/day, ≈2,400/week), paging the API politely. Coverage can also be set to Curated or First-hand. |
-| Edit | DeepSeek Flash processes batches of 250 in parallel. It merges coverage of the same event and rates importance 1–5. It is lenient: it drops only ads, chatter and duplicates. For long periods a second pass merges stories that were split across batches. |
-| Plan | Assigns deep dives, briefs and quick hits based on the episode length. **Every** kept story goes into the show notes, with links. |
-| Write | DeepSeek V4 Pro writes the script: cold open → themed deep dives → briefs → quick hits → wrap. It sticks to the provided facts with attribution, is written for the ear, and gives a line-count target. |
-| Record | One MiMo call per line, using the full style-control set from the docs:<br>• **Director mode** in the user message: `[Character]` = host persona, `[Scene]` = show tone and segment, `[Guidance]` = that line's direction<br>• a **leading `(style)` tag** and **inline `[audio tags]`** in the assistant text<br>• **singing mode** for the optional jingle<br>• **VoiceClone** for custom voices<br>Five lines record in parallel. |
-| Guard | Generative TTS sometimes keeps talking past the script for minutes. Every take is checked against its word count: bad takes are retried, and as a last resort capped with a fade. Silence is trimmed. |
-| Mix | Matches loudness across voices with a soft limiter. Gaps are 0.22 s for the same speaker, 0.3 s for a speaker change and 0.85 s between chapters. Exports AAC 64 kbps `.m4a` and copies it to `~/Music/AI News Hot/`. |
+```bash
+cd mobile
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew installDebug          # build and install on a USB-connected phone
+./gradlew assembleRelease       # app/build/outputs/apk/release/app-release.apk
+```
 
-**Player:** chapters, a transcript that highlights the current line (click any line to jump there), show notes, speed 0.8–2×, ±15/30 s. Media keys, AirPods and Control Center work through Now Playing; next/previous track jumps between chapters.
+- **Version:** taken from `VERSION` (versionCode = major·10000 + minor·100 + patch).
+- **API keys:** default keys are read from `Resources/secrets.json` at build time.
+- **Signing:** release APKs are signed with this Mac's Android debug key (no Play Store). Updates must be signed with the same key, or the old app has to be uninstalled first.
 
-**Settings › Podcast:**
-- solo or duo; for each host: name, voice and persona
-- length: auto, or 5–30 min
-- coverage
-- tone: morning, newsroom, casual, energetic
-- emotion: subtle (≈15% of lines tagged), natural (≈40%), expressive (≈75%, with breaths and laughs)
-- sung jingle
-- writer model
-- auto-prepare a morning episode at a set time (7-day recap on Mondays), announced by a popup
-- **Custom voices:**
-  - *Design* a voice from a description. VoiceDesign renders it once and the sample is reused through VoiceClone, so the voice stays the same for every line.
-  - *Clone* a voice from a 10–30 s wav/mp3 recording.
+**Debug builds only:** trigger alerts, a podcast, or playback from the computer:
+```bash
+adb shell am broadcast -a com.aliahad.ainewshot.DEBUG_ALERT --ei count 3 -p com.aliahad.ainewshot
+adb shell am broadcast -a com.aliahad.ainewshot.DEBUG_PODCAST --ei days 1 -p com.aliahad.ainewshot
+adb shell am broadcast -a com.aliahad.ainewshot.DEBUG_PLAY -p com.aliahad.ainewshot
+```
 
-**Automation:** run `open -a ~/Applications/AINewsHot.app --args --podcast 1` (works from Shortcuts or cron).
+## Releasing
 
-## Popup controls
+```bash
+echo 2.1.0 > VERSION
+(cd mobile && ./gradlew assembleRelease)
+cp mobile/app/build/outputs/apk/release/app-release.apk build/AINewsHot-2.1.0.apk
+gh release create v2.1.0 build/AINewsHot-2.1.0.apk --title "AI News Hot 2.1.0 (Android)" --notes "…"
+```
 
-`⏎` Read (opens the original article, or the story timeline for trending items) · `esc` Dismiss · `space` Listen/Stop · `E` Explain · `←/→` browse · **Later** (re-pops in 15 min, 30 min, 1 h or 3 h).
-Keyboard shortcuts only work after a 0.8 s guard, so a key you were already pressing in another app can't trigger the popup by accident.
+## Project layout
 
-Global hotkeys: **⌃⌥⌘N** reopens recent alerts · **⌃⌥⌘.** stops speech.
+```
+mobile/                 Android app (Kotlin, Jetpack Compose) — the maintained product
+  app/src/main/java/com/aliahad/ainewshot/
+    AIHot.kt            aihot.news client (first-hand timeline + official v1 API)
+    AI.kt               DeepSeek translation/explain, MiMo TTS + run-on guard
+    NewsRepo.kt         polling, filtering, holds, routing
+    Alerts.kt           notifications, forced popup, speaker
+    AlertActivity.kt    the full-screen alert card
+    Background.kt       live foreground service, WorkManager, boot receiver
+    Podcast.kt          editor → writer → recorder → mixer → AAC
+    PodcastPlayback.kt  production service + Media3 playback
+    ui/                 Compose screens (News, Podcast, Reports, Settings)
+macos/                  deprecated macOS menu-bar app (Swift)
+Resources/secrets.json  default API keys bundled into builds
+VERSION                 app version
+```
 
-## Beyond the basics
+## Data source
 
-- **Trending detection.** When one story is picked up by 8+ sources and enters the top 5, you get an alert, even if no single article scored high.
-- **Explain button.** DeepSeek writes a short developer brief: what happened, why it matters, what you could try, and open questions. It sticks to the item's text and labels any background it adds.
-- **Morning briefing.** At 08:15 the app turns AIHOT's daily report into an English briefing with a 60–90 s spoken version. A weekly one comes on Mondays. Daily, Trending, Weekly and Monthly reports can also be opened on demand from the menu.
-- **Respectful interruption:**
-  - Alerts are held while the screen is locked and during quiet hours or a pause. Held alerts arrive later as one digest.
-  - A popups-per-hour cap keeps a busy news day from flooding you.
-  - The voice stays **silent while your microphone is in use** (calls and meetings).
-  - After the Mac wakes, the app catches up right away.
-- **No first-run flood.** On the first launch the app fills the menu with recent news but doesn't pop any of it up.
-
-## Other ways to use the same data
-
-- **Claude Code / Claude Desktop:** `claude mcp add --transport http aihot https://aihot.news/api/mcp` adds 8 tools (latest, search, hot topics, story, daily/weekly/monthly).
-- **RSS:** `https://aihot.news/feed.xml` (curated), `/feed/category/ai-models.xml`, etc.
-
-## Files
-
-`Sources/AINewsHot/`
-- `AIHot.swift`: API client and models
-- `Translator.swift`: DeepSeek and Apple Translate
-- `Audio.swift`: MiMo TTS, playback and microphone detection
-- `Engine.swift`: polling, filters and routing
-- `Alert.swift`: popup panel
-- `Reader.swift`: document window
-- `MenuView.swift`
-- `SettingsView.swift`
-- `App.swift`: app entry point and hotkeys
-
-Data lives in `~/Library/Application Support/AINewsHot/`: `state.json`, `secrets.json`, and `audio/` (a 3-day cache).
-
-AIHOT terms: personal use is free. Commercial products or redistribution need written permission ([terms](https://aihot.news/terms)).
+The app uses aihot.news's anonymous, read-only API. Personal use is free. Commercial products or redistribution need the site's written permission ([terms](https://aihot.news/terms)). The first-hand feed uses the site's own timeline endpoint, which is undocumented. The app learns which sources are first-hand, so if that endpoint changes it falls back to the official API filtered to those sources.
