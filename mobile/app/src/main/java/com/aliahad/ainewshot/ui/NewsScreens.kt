@@ -383,18 +383,18 @@ fun ArticleScreen(id: String, seed: NewsItem?, onBack: () -> Unit) {
             val headings = remember(blocks) { blocks.withIndex().filter { isHeading(it.value) } }
             NavigationBar {
                 NavigationBarItem(selected = false, onClick = { NewsRepo.toggleSaved(ctx, item) },
-                    icon = { Text(if (isSaved) "★" else "☆", fontSize = 20.sp) }, label = { Text(if (isSaved) "Saved" else "Save") })
+                    icon = { Icon(if (isSaved) AppIcons.BookmarkOn else AppIcons.Bookmark, null, Modifier.size(22.dp)) }, label = { Text(if (isSaved) "Saved" else "Save") })
                 NavigationBarItem(selected = false, enabled = headings.isNotEmpty(), onClick = { toc = true },
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, null) }, label = { Text("Contents") })
+                    icon = { Icon(AppIcons.Contents, null, Modifier.size(22.dp)) }, label = { Text("Contents") })
                 NavigationBarItem(selected = false, onClick = { Speaker.toggle(ctx, item) },
-                    icon = { Text(if (playing == item.id) "■" else "▶", fontSize = 18.sp) },
+                    icon = { Icon(if (playing == item.id) AppIcons.Stop else AppIcons.Play, null, Modifier.size(22.dp)) },
                     label = { Text(when { preparing == item.id -> "Starting…"; playing == item.id -> "Stop"; else -> "Listen" }) })
                 NavigationBarItem(selected = false, onClick = {
                     ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
                         .putExtra(Intent.EXTRA_TEXT, "${item.title}\n${item.originalUrl ?: item.aihotUrl ?: ""}"), "Share"))
-                }, icon = { Icon(Icons.Default.Share, null) }, label = { Text("Share") })
+                }, icon = { Icon(AppIcons.Share, null, Modifier.size(22.dp)) }, label = { Text("Share") })
                 NavigationBarItem(selected = false, onClick = { (item.originalUrl ?: art?.item?.originalUrl ?: item.aihotUrl)?.let { ctx.openUrl(it) } },
-                    icon = { Text("↗", fontSize = 20.sp) }, label = { Text("Original") })
+                    icon = { Icon(AppIcons.External, null, Modifier.size(22.dp)) }, label = { Text("Original") })
             }
             if (toc) ModalBottomSheet(onDismissRequest = { toc = false }) {
                 Text("Contents", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -418,8 +418,12 @@ fun ArticleScreen(id: String, seed: NewsItem?, onBack: () -> Unit) {
 @Composable
 fun BottomTabs(tab: Int, onTab: (Int) -> Unit) {
     NavigationBar {
-        listOf("Selected" to "⚡", "Hot" to "🔥", "Daily" to "📰", "Podcast" to "🎧", "Me" to "👤").forEachIndexed { i, (label, icon) ->
-            NavigationBarItem(selected = tab == i, onClick = { onTab(i) }, icon = { Text(icon, fontSize = 18.sp) }, label = { Text(label) })
+        // Outline icons; the selected tab's icon fills in, like the site's accent state.
+        listOf(Triple("Selected", AppIcons.Selected, AppIcons.SelectedOn), Triple("Hot", AppIcons.Hot, AppIcons.HotOn),
+            Triple("Daily", AppIcons.Daily, AppIcons.Daily), Triple("Podcast", AppIcons.Podcast, AppIcons.Podcast),
+            Triple("Me", AppIcons.Me, AppIcons.Me)).forEachIndexed { i, (label, icon, on) ->
+            NavigationBarItem(selected = tab == i, onClick = { onTab(i) },
+                icon = { Icon(if (tab == i) on else icon, label, Modifier.size(24.dp)) }, label = { Text(label) })
         }
     }
 }

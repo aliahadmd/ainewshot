@@ -196,7 +196,8 @@ fun BookmarkButton(item: NewsItem) {
     val saved by NewsRepo.saved.collectAsState()
     val on = saved.any { it.id == item.id }
     IconButton(onClick = { NewsRepo.toggleSaved(ctx, item) }, modifier = Modifier.size(32.dp)) {
-        Text(if (on) "★" else "☆", fontSize = 18.sp, color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(if (on) AppIcons.BookmarkOn else AppIcons.Bookmark, if (on) "Saved" else "Save", Modifier.size(18.dp),
+            tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -181,7 +181,7 @@ fun DailyScreen() {
             }
             if (highlights.isNotEmpty()) item {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionLabel(if (kind == "dailies") "TODAY'S HIGHLIGHTS" else "HIGHLIGHTS")
+                    SectionLabel(if (kind == "dailies" && v.paper.key == LocalDate.now().toString()) "TODAY'S HIGHLIGHTS" else "HIGHLIGHTS")
                     highlights.forEachIndexed { i, (it, r) ->
                         Row(Modifier.fillMaxWidth().clickable(enabled = it.id != null) { it.id?.let { id -> nav.go(Route.Article(id)) } }) {
                             Text("${i + 1}", fontWeight = FontWeight.Black, fontSize = 20.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(26.dp))

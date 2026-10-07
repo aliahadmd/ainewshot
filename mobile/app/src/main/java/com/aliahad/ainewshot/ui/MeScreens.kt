@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -26,6 +27,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,23 +77,25 @@ fun MeScreen() {
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Me") })
         LazyColumn(Modifier.fillMaxSize()) {
-            item { MeRow("☆", "Saved", "${saved.size} stor${if (saved.size == 1) "y" else "ies"}") { nav.go(Route.Saved) } }
-            item { MeRow("#", "Topics", if (following > 0) "Following $following · alerts for these" else "38 topics: companies, research areas, content types") { nav.go(Route.Topics) } }
-            item { MeRow("◎", "Catch up", if (unread > 0) "$unread unread stories" else "You're all caught up") { nav.go(Route.CatchUp) } }
-            item { MeRow("⌕", "Search", "Everything from the last 7 days") { nav.go(Route.Search) } }
+            item { MeRow(AppIcons.Bookmark, "Saved", "${saved.size} stor${if (saved.size == 1) "y" else "ies"}") { nav.go(Route.Saved) } }
+            item { MeRow(AppIcons.Topics, "Topics", if (following > 0) "Following $following · alerts for these" else "38 topics: companies, research areas, content types") { nav.go(Route.Topics) } }
+            item { MeRow(AppIcons.CatchUp, "Catch up", if (unread > 0) "$unread unread stories" else "You're all caught up") { nav.go(Route.CatchUp) } }
+            item { MeRow(AppIcons.Search, "Search", "Everything from the last 7 days") { nav.go(Route.Search) } }
+            item { Header("Appearance") }
+            item { AppearanceRow() }
             item { Header("Tools") }
-            item { MeRow("▤", "Model ranking", "AIHOT's leaderboard (opens aihot.news)") { ctx.openUrl("${AIHot.BASE}/leaderboard") } }
-            item { MeRow("⚙", "Settings", "Alerts, briefings, voice, podcast, keys") { nav.go(Route.Settings) } }
-            item { MeRow("✓", "Reliability setup", "Make sure HyperOS never blocks alerts") { nav.go(Route.Setup) } }
+            item { MeRow(AppIcons.Ranking, "Model ranking", "AIHOT's leaderboard (opens aihot.news)") { ctx.openUrl("${AIHot.BASE}/leaderboard") } }
+            item { MeRow(AppIcons.Settings, "Settings", "Alerts, briefings, voice, podcast, keys") { nav.go(Route.Settings) } }
+            item { MeRow(AppIcons.Reliability, "Reliability setup", "Make sure HyperOS never blocks alerts") { nav.go(Route.Setup) } }
             if (stories.isNotEmpty()) {
                 item { Header("Stories you follow") }
                 items(stories.values.sortedByDescending { it.latestAt }.take(6), key = { "fs-" + it.id }) { f ->
-                    MeRow("↻", f.title, "Alerts when it develops" + (f.latestAt.takeIf { it > 0 }?.let { " · updated ${ago(it)}" } ?: "")) { nav.go(Route.Story(f.id, f.title)) }
+                    MeRow(AppIcons.Story, f.title, "Alerts when it develops" + (f.latestAt.takeIf { it > 0 }?.let { " · updated ${ago(it)}" } ?: "")) { nav.go(Route.Story(f.id, f.title)) }
                 }
             }
             item { Header("About") }
-            item { MeRow("i", "AIHOT", "Where all news comes from · aihot.news") { ctx.openUrl(AIHot.BASE) } }
-            item { MeRow("§", "Usage rules", "AIHOT's terms for personal readers") { ctx.openUrl("${AIHot.BASE}/terms") } }
+            item { MeRow(AppIcons.Info, "AIHOT", "Where all news comes from · aihot.news") { ctx.openUrl(AIHot.BASE) } }
+            item { MeRow(AppIcons.Rules, "Usage rules", "AIHOT's terms for personal readers") { ctx.openUrl("${AIHot.BASE}/terms") } }
             item {
                 Text("AI News Hot ${BuildConfig.VERSION_NAME} · translation by DeepSeek · voices by Xiaomi MiMo",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
@@ -99,13 +105,35 @@ fun MeScreen() {
 }
 
 @Composable
-private fun MeRow(icon: String, title: String, sub: String, onClick: () -> Unit) {
+private fun MeRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String, onClick: () -> Unit) {
     ListItem(modifier = Modifier.clickable(onClick = onClick),
         leadingContent = { Box(Modifier.size(34.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
-            Text(icon, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSecondaryContainer) } },
+            Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) } },
         headlineContent = { Text(title) },
         supportingContent = { Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        trailingContent = { Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) })
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) })
+}
+
+/** The site's 外观 switch (浅色 · 跟随系统 · 深色), plus the phone's own Material You colours. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceRow() {
+    val s = Settings.get(LocalContext.current)
+    val v by s.version.collectAsState()
+    val current = remember(v) { s.theme }
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        val options = listOf("light" to "Light", "system" to "Auto", "dark" to "Dark", "phone" to "Phone")
+        options.forEachIndexed { i, (k, label) ->
+            SegmentedButton(selected = current == k, onClick = { s.theme = k },
+                shape = SegmentedButtonDefaults.itemShape(i, options.size)) { Text(label) }
+        }
+    }
+    Text(when (current) {
+        "light" -> "Warm light, as on aihot.news"
+        "dark" -> "Dark, as on aihot.news"
+        "phone" -> "Your phone's wallpaper colours (Material You)"
+        else -> "Follows your phone: warm light by day, dark at night"
+    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
 }
 
 @Composable

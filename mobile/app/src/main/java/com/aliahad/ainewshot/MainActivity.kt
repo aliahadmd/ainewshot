@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.aliahad.ainewshot.ui.AppTheme
 import com.aliahad.ainewshot.ui.ArticleScreen
 import com.aliahad.ainewshot.ui.BottomTabs
 import com.aliahad.ainewshot.ui.CatchUpScreen
@@ -89,12 +90,6 @@ class MainActivity : ComponentActivity() {
             openRoute.value = Route.Story(sid, intent.getStringExtra("title") ?: "")
         }
     }
-}
-
-@Composable
-fun AppTheme(content: @Composable () -> Unit) {
-    val ctx = LocalContext.current
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx), content = content)
 }
 
 @Composable
