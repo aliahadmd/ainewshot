@@ -40,6 +40,9 @@ object Speaker {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     val playingId = MutableStateFlow<String?>(null)
     val preparingId = MutableStateFlow<String?>(null)
+    /** Consecutive MiMo failures (bad key, quota, outage). 3+ shows a warning; any success resets it. */
+    val mimoFailures = MutableStateFlow(0)
+    val mimoLastError = MutableStateFlow<String?>(null)
     private var player: MediaPlayer? = null
     private var track: AudioTrack? = null
     private var tts: TextToSpeech? = null
@@ -82,7 +85,8 @@ object Speaker {
         return runCatching {
             val pcm = MiMo.checkedPcm(ctx, item.speechText, s.voiceStyle, s.voice, s.mimoKey)
             f.writeBytes(MiMo.wav(pcm)); f
-        }.onFailure { Log.w(TAG, "TTS failed", it) }.getOrNull()
+        }.onSuccess { mimoFailures.value = 0 }
+            .onFailure { Log.w(TAG, "TTS failed", it); mimoFailures.value++; mimoLastError.value = it.message }.getOrNull()
     }
 
     /** Pre-render the newest stories on unmetered networks so "Listen" is instant. */
@@ -197,11 +201,13 @@ object Speaker {
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Throwable) {
+                        mimoLastError.value = e.message
                         if (!first.isCompleted) first.completeExceptionally(e) else Log.w(TAG, "stream ended early", e)
                     }
                 }
                 val ok = runCatching { withTimeout(12_000) { first.await() } }.isSuccess
-                if (!ok) { net.cancel(); return@coroutineScope }
+                if (!ok) { net.cancel(); mimoFailures.value++; return@coroutineScope }
+                mimoFailures.value = 0
                 net.join()
                 // Let the buffered tail play out.
                 val frames = written / 2

@@ -56,7 +56,7 @@ object AIHot {
     }
 
     /** Item from the site timeline behind https://aihot.news/?channel=firstParty (undocumented). */
-    fun parseTimeline(o: JSONObject): ApiItem {
+    fun parseTimeline(o: JSONObject, firstParty: Boolean = true): ApiItem {
         val id = o.getString("id")
         return ApiItem(
             id = id,
@@ -73,23 +73,41 @@ object AIHot {
             reason = o.str("reason"),
             selected = true,
             tags = o.optJSONArray("tags").strings(),
-            firstParty = true,
+            firstParty = firstParty,
         )
+    }
+
+    /** A page of the site timeline. `groups` maps a card's lead item to AIHOT's event group (same story, several reports). */
+    data class TimelinePage(val items: List<ApiItem>, val next: String?, val groups: Map<String, Pair<String, Int>>)
+
+    /** channel = "firstParty" for 只看一手, null for all curated (精选). */
+    suspend fun timeline(channel: String?, cursor: String? = null, conditional: Boolean = true): TimelinePage? {
+        val q = listOfNotNull(channel?.let { "channel=$it" }, cursor?.let { "cursor=" + enc(it) }).joinToString("&")
+        val body = Net.get("$BASE/api/site/timeline" + (if (q.isNotEmpty()) "?$q" else ""), conditional) ?: return null
+        val o = JSONObject(body)
+        val cards = o.getJSONArray("cards")
+        val items = mutableListOf<ApiItem>()
+        val groups = mutableMapOf<String, Pair<String, Int>>()
+        for (i in 0 until cards.length()) {
+            val c = cards.getJSONObject(i)
+            val it = parseTimeline(c.getJSONObject("item"), firstParty = channel == "firstParty")
+            items += it
+            c.optJSONObject("group")?.let { g -> g.str("factId")?.let { f -> groups[it.id] = f to g.optInt("additionalSourceCount") } }
+        }
+        return TimelinePage(items, o.str("nextCursor"), groups)
+    }
+
+    /** Ids of every report AIHOT merged into one event. */
+    suspend fun groupMembers(factId: String): List<String> {
+        val o = JSONObject(Net.get("$BASE/api/site/groups/${enc(factId)}/reports") ?: "{}")
+        val arr = o.optJSONArray("reports") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { arr.getJSONObject(it).let { r -> (r.optJSONObject("item") ?: r).str("id") } }
     }
 
     suspend fun items(mode: String, window: String = "24h", limit: Int = 50, conditional: Boolean = true): List<ApiItem>? {
         val body = Net.get("$BASE/api/v1/items?limit=$limit&mode=$mode&window=$window", conditional) ?: return null
         val arr = JSONObject(body).getJSONArray("items")
         return (0 until arr.length()).map { parseV1(arr.getJSONObject(it)) }
-    }
-
-    suspend fun firstPartyPage(cursor: String? = null, conditional: Boolean = true): Pair<List<ApiItem>, String?>? {
-        val url = "$BASE/api/site/timeline?channel=firstParty" + (cursor?.let { "&cursor=" + enc(it) } ?: "")
-        val body = Net.get(url, conditional) ?: return null
-        val o = JSONObject(body)
-        val cards = o.getJSONArray("cards")
-        val items = (0 until cards.length()).map { parseTimeline(cards.getJSONObject(it).getJSONObject("item")) }
-        return items to o.str("nextCursor")
     }
 
     /** Everything discovered since [since] for a podcast; pages are spaced to stay well under ~60 req/min. */
@@ -102,8 +120,8 @@ object AIHot {
             val batch: List<ApiItem>
             val next: String?
             if (coverage == "firstParty") {
-                val r = firstPartyPage(cursor, conditional = false) ?: break
-                batch = r.first; next = r.second
+                val r = timeline("firstParty", cursor, conditional = false) ?: break
+                batch = r.items; next = r.next
             } else {
                 val mode = if (coverage == "selected") "selected" else "all"
                 val window = if (days <= 1.01) "24h" else "7d"
@@ -149,6 +167,7 @@ object AIHot {
         "开源生态" to "Open source", "数据/训练" to "Training data", "端侧" to "On-device", "语音" to "Voice",
         "大佬观点" to "Opinion", "开源/仓库" to "Open-source repo", "具身智能" to "Robotics", "图像生成" to "Image gen",
         "视频生成" to "Video gen", "融资/商业" to "Funding", "政策/监管" to "Policy", "芯片/算力" to "Chips/Compute",
+        "现象/趋势" to "Trends", "视频" to "Video",
     )
     fun tagEn(t: String) = tagEnglish[t] ?: t
 }

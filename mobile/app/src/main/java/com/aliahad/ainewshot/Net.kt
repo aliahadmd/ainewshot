@@ -13,7 +13,8 @@ class HttpError(val code: Int, val body: String, val retryAfter: Long? = null) :
     Exception("HTTP $code${if (body.isNotBlank()) ": " + body.take(200) else ""}")
 
 object Net {
-    const val UA = "AINewsHot-Android/1.0 (personal reader)"
+    // AIHOT asks programs that sync or push to identify themselves with aihot-api/<version>.
+    val UA = "AINewsHot-Android/${BuildConfig.VERSION_NAME} aihot-api/2.0.0 (personal reader)"
     private val etags = ConcurrentHashMap<String, String>()
 
     /** GET text. With [conditional], sends the last ETag and returns null on 304 (nothing changed). */

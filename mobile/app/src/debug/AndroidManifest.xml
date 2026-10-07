@@ -8,6 +8,7 @@
                 <action android:name="com.aliahad.ainewshot.DEBUG_PODCAST" />
                 <action android:name="com.aliahad.ainewshot.DEBUG_PLAY" />
                 <action android:name="com.aliahad.ainewshot.DEBUG_PAUSE" />
+                <action android:name="com.aliahad.ainewshot.DEBUG_BRIEFING" />
             </intent-filter>
         </receiver>
     </application>

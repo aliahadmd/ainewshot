@@ -35,6 +35,19 @@ class Settings private constructor(ctx: Context) {
     var popupMode by str("popupMode", "fullscreen")       // fullscreen | notification
     var maxPerHour by int("maxPerHour", 6)
     var digestThreshold by int("digestThreshold", 3)
+    // Trending ("hot list") alerts: a story climbing AIHOT's Top 10 across many sources.
+    var trendingAlerts by bool("trendingAlerts", false)
+    var trendingTopRank by int("trendingTopRank", 3)
+    var trendingMinSources by int("trendingMinSources", 8)
+    // Topics you follow: matching *curated* stories are also alerted (comma-separated topic ids).
+    var followedTopics by str("followedTopics", "")
+    fun followed(): Set<String> = followedTopics.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    // Morning briefing: AIHOT's daily report (published 08:00 Beijing), translated and delivered as a popup.
+    var briefingEnabled by bool("briefingEnabled", true)
+    var briefingMinutes by int("briefingMinutes", 8 * 60 + 15)
+    var briefingWeekly by bool("briefingWeekly", true)
+    // Story follow-ups: alert when a story you opened (or were alerted about) has a new development.
+    var storyFollowUps by bool("storyFollowUps", true)
     var quietEnabled by bool("quietEnabled", false)
     var quietStart by int("quietStart", 23 * 60)
     var quietEnd by int("quietEnd", 7 * 60)

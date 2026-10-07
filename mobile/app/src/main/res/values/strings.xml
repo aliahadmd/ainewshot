@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">AI News Hot</string>
+    <string name="widget_description">Latest first-hand AI news and your unread count</string>
 </resources>

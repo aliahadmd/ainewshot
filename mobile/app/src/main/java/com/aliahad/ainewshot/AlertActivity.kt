@@ -88,7 +88,7 @@ private fun AlertScreen(onFinish: () -> Unit) {
     if (queue.isEmpty()) return
     if (index > queue.lastIndex) index = queue.lastIndex
 
-    fun dismiss(item: NewsItem) { Speaker.stop(); Alerts.dismiss(item.id) }
+    fun dismiss(item: NewsItem) { Speaker.stop(); Alerts.dismiss(item.id); NewsRepo.markRead(listOf(item.id)); NewsRepo.persist(ctx) }
     fun dismissAll() { Speaker.stop(); Alerts.clear() }
 
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))
@@ -120,10 +120,12 @@ private fun CardBody(ctx: Context, item: NewsItem, index: Int, count: Int, armed
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             when (item.kind) {
                 "podcast" -> Pill("🎙 Podcast ready", Color(0x339C27B0), Color(0xFF9C27B0))
+                "trending" -> Pill("🔥 Trending", Color(0x33FF9800), Color(0xFFE65100))
                 "briefing" -> Pill("Briefing")
                 else -> Pill("⚡ " + AIHot.categoryLabel(item.category))
             }
             if (item.firstParty) Pill("✓ Official", Color(0x3322AA55), Color(0xFF1E8E3E))
+            item.topics.firstOrNull()?.let { Pill("★ $it") }
             Box(Modifier.weight(1f))
             if (count > 1) {
                 Text("‹", fontSize = 22.sp, modifier = Modifier.clickable(enabled = index > 0, onClick = onPrev).padding(horizontal = 8.dp))
@@ -156,9 +158,16 @@ private fun CardBody(ctx: Context, item: NewsItem, index: Int, count: Int, armed
                 }, modifier = Modifier.weight(1f)) { Text("Play podcast") }
             } else {
                 Button(enabled = armed, onClick = {
-                    item.link?.let { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    if (item.kind == "briefing") {
+                        NewsRepo.briefing.value = item
+                        ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("briefing", true)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                    } else if (item.kind == "trending" && item.storyId != null) {
+                        ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("story", item.storyId).putExtra("title", item.title)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                    } else item.link?.let { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                     onDismiss()
-                }, modifier = Modifier.weight(1f)) { Text("Read") }
+                }, modifier = Modifier.weight(1f)) { Text(when (item.kind) { "trending" -> "Read story"; "briefing" -> "Read briefing"; else -> "Read" }) }
                 FilledTonalButton(enabled = armed, onClick = { Speaker.toggle(ctx, item) }) {
                     Text(when { preparing == item.id -> "…"; playing == item.id -> "Stop"; else -> "Listen" })
                 }

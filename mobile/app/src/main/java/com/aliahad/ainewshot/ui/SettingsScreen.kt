@@ -87,6 +87,7 @@ fun SettingsScreen(onSetup: () -> Unit) {
             if (v < 0) Text("")
             ReliabilitySection(onSetup, resumed)
             AlertsSection(ctx, s)
+            BriefingsSection(ctx, s)
             VoiceSection(ctx, s)
             LanguageSection(s)
             PodcastSection(ctx, s)
@@ -123,6 +124,7 @@ private fun ReliabilitySection(onSetup: () -> Unit, resumed: Int) {
 
 @Composable
 private fun AlertsSection(ctx: Context, s: Settings) {
+    s.observe()
     val scope = rememberCoroutineScope()
     var advanced by remember { mutableStateOf(false) }
     SectionTitle("Alerts")
@@ -140,10 +142,33 @@ private fun AlertsSection(ctx: Context, s: Settings) {
             "selected" -> "AIHOT's editors' picks, about 15–25 a day: official news plus the best coverage."
             else -> "Every AI story, hundreds a day. Use keywords or a higher score below."
         })
-        LabeledSlider("Minimum AIHOT score", s.minScore, 0..90, hint = "Curated items score 60–85. 0 = everything in the feed above.") { s.minScore = it }
+        // First-hand items all score 60+, so the score filter only means something for the wider feeds.
+        if (s.feedMode != "firstParty") LabeledSlider("Minimum AIHOT score", s.minScore, 0..90, hint = "Curated items score 60–85. 0 = everything in the feed above.") { s.minScore = it }
         Field("Always alert on keywords", s.includeKeywords, "claude, anthropic, deepseek") { s.includeKeywords = it }
         Field("Never alert on keywords", s.excludeKeywords, "crypto, funding round") { s.excludeKeywords = it }
         Hint("Comma-separated. Also matches AIHOT tags such as Anthropic, Agent, Coding, Model release, Safety.")
+    }
+    Group("Follow topics") {
+        Hint("Also alert me about curated stories on these topics — not just first-hand announcements. Matches AIHOT's own topic tags.")
+        val followed = s.followed()
+        com.aliahad.ainewshot.Topics.all.groupBy { it.group }.forEach { (group, topics) ->
+            Text(group, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                topics.forEach { t ->
+                    androidx.compose.material3.FilterChip(selected = t.id in followed, onClick = {
+                        s.followedTopics = (if (t.id in followed) followed - t.id else followed + t.id).joinToString(",")
+                    }, label = { Text(t.label) })
+                }
+            }
+        }
+    }
+    Group("Trending alerts") {
+        Toggle("Alert me when a story starts trending", "When a story climbs AIHOT's hot list across many independent sources.", s.trendingAlerts) { s.trendingAlerts = it }
+        if (s.trendingAlerts) {
+            LabeledSlider("Only stories in the top", s.trendingTopRank, 1..10) { s.trendingTopRank = it }
+            LabeledSlider("Covered by at least (sources)", s.trendingMinSources, 3..20) { s.trendingMinSources = it }
+        }
+        Hint("The Trending tab in News always shows the live Top 10, whether or not alerts are on.")
     }
     Group("How alerts appear") {
         ChoiceRow(null, listOf("fullscreen" to "Pop up over apps", "notification" to "Notification only"), s.popupMode) { s.popupMode = it }
@@ -172,7 +197,22 @@ private fun AlertsSection(ctx: Context, s: Settings) {
 }
 
 @Composable
+private fun BriefingsSection(ctx: Context, s: Settings) {
+    s.observe()
+    SectionTitle("Briefings & follow-ups")
+    Toggle("Morning briefing", "AIHOT's daily report (out 08:00 Beijing), translated and read to you as a popup.", s.briefingEnabled) { s.briefingEnabled = it }
+    if (s.briefingEnabled) {
+        TimeButton(ctx, "Deliver at", s.briefingMinutes) { s.briefingMinutes = it }
+        Toggle("Weekly briefing on Mondays", "The week's biggest stories, after AIHOT's weekly report comes out.", s.briefingWeekly) { s.briefingWeekly = it }
+    }
+    Toggle("Story follow-ups", "When a story you opened (or were alerted about) has a new development, tell me.", s.storyFollowUps) { s.storyFollowUps = it }
+    val followed = NewsRepo.followedStories.collectAsState().value
+    if (followed.isNotEmpty()) Hint("Following ${followed.size} stor${if (followed.size == 1) "y" else "ies"} (each for 4 days).")
+}
+
+@Composable
 private fun VoiceSection(ctx: Context, s: Settings) {
+    s.observe()
     SectionTitle("Voice")
     Toggle("Read alerts aloud", "Stays quiet during calls (below) and while a podcast plays.", s.audioEnabled) { s.audioEnabled = it }
     Toggle("Silent during calls and meetings", null, s.silentInCalls) { s.silentInCalls = it }
@@ -192,6 +232,7 @@ private fun VoiceSection(ctx: Context, s: Settings) {
 
 @Composable
 private fun LanguageSection(s: Settings) {
+    s.observe()
     SectionTitle("Language & AI")
     Group("Translate Chinese news with") {
         ChoiceRow(null, listOf("deepseek" to "DeepSeek AI", "original" to "No translation"), s.translation) { s.translation = it }
@@ -204,6 +245,7 @@ private fun LanguageSection(s: Settings) {
 
 @Composable
 private fun PodcastSection(ctx: Context, s: Settings) {
+    s.observe()
     val scope = rememberCoroutineScope()
     var designName by remember { mutableStateOf("Nova") }
     var designPrompt by remember { mutableStateOf("A woman in her late twenties with a smooth, clear, slightly husky voice; confident late-night radio host; relaxed, warm pace.") }
@@ -239,7 +281,10 @@ private fun PodcastSection(ctx: Context, s: Settings) {
         Field("Persona", s.podHostBPersona, "", lines = 3) { s.podHostBPersona = it }
     }
     Hint("Personas are sent to MiMo as the [Character] in director mode and to the script writer.")
-    Group("Custom voices") {
+    // Niche + extra API calls: tucked away unless you've already made a custom voice.
+    var customOpen by remember { mutableStateOf(MiMo.customVoices(ctx).isNotEmpty()) }
+    TextButton(onClick = { customOpen = !customOpen }) { Text(if (customOpen) "Hide custom voices" else "Custom voices (advanced)…") }
+    if (customOpen) Group("Custom voices") {
         val custom = MiMo.customVoices(ctx)
         if (custom.isNotEmpty()) custom.forEach { f ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -279,6 +324,7 @@ private fun PodcastSection(ctx: Context, s: Settings) {
 
 @Composable
 private fun KeysSection(ctx: Context, s: Settings) {
+    s.observe()
     val scope = rememberCoroutineScope()
     var ds by remember { mutableStateOf("") }
     var mm by remember { mutableStateOf("") }
@@ -314,6 +360,13 @@ private fun voiceOptions(ctx: Context) = MiMo.builtInVoices.map { it.first to it
     MiMo.customVoices(ctx).map { ("file:$it") to MiMo.voiceLabel("file:$it") }
 
 // MARK: Building blocks
+
+/**
+ * Subscribe this section to settings changes. With Compose strong skipping, a section that only receives the
+ * (unchanged) Settings object would otherwise be skipped and keep showing — and acting on — stale values.
+ */
+@Composable
+private fun Settings.observe(): Int = version.collectAsState().value
 
 @Composable
 private fun Group(title: String, content: @Composable () -> Unit) {

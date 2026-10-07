@@ -46,17 +46,23 @@ class LiveService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        ServiceCompat.startForeground(this, NOTIF_ID, Alerts.liveNotification(this, "Starting…"),
+        ServiceCompat.startForeground(this, NOTIF_ID, Alerts.liveNotification(this, "Watching for AI news", "Starting…"),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
         if (loop == null) loop = lifecycleScope.launch {
             while (true) {
                 NewsRepo.check(this@LiveService)
                 val st = NewsRepo.status.value
-                val text = st.error ?: st.lastCheck?.let {
-                    "Checked " + DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS) +
-                        (if (st.held > 0) " · ${st.held} held" else "")
+                // The always-on notification doubles as a ticker: newest headline + freshness.
+                val latest = NewsRepo.recent.value.firstOrNull { it.kind == "news" }
+                val unread = NewsRepo.unread().size
+                val meta = st.error ?: st.lastCheck?.let {
+                    "checked " + DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS) +
+                        (if (unread > 0) " · $unread unread" else "") + (if (st.held > 0) " · ${st.held} held" else "")
                 } ?: "Connecting…"
-                runCatching { NotificationManagerCompat.from(this@LiveService).notify(NOTIF_ID, Alerts.liveNotification(this@LiveService, text)) }
+                runCatching {
+                    NotificationManagerCompat.from(this@LiveService).notify(NOTIF_ID,
+                        Alerts.liveNotification(this@LiveService, latest?.title ?: "Watching for AI news", meta))
+                }
                 delay(Settings.get(this@LiveService).pollSeconds.coerceAtLeast(60) * 1000L)
             }
         }

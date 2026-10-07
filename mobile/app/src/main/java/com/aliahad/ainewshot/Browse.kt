@@ -96,6 +96,39 @@ object Browse {
         }
     }
 
+    /**
+     * Search the last 7 days of all AI news (official `q=` parameter). AIHOT's text is Chinese, so an English
+     * query is also expanded into its Chinese equivalent and both searches are merged.
+     */
+    suspend fun search(ctx: Context, query: String): List<NewsItem> = withContext(Dispatchers.Default) {
+        loadCache(ctx)
+        val s = Settings.get(ctx)
+        val q = query.trim()
+        if (q.length < 2) return@withContext emptyList()
+        val queries = mutableListOf(q)
+        if (Translator.isLatin(q) && s.deepseekKey.isNotBlank()) runCatching {
+            val zh = DeepSeek(s.deepseekKey, "deepseek-flash").chat(
+                "Translate this AI-news search query into the short Simplified Chinese keyword(s) a Chinese AI news site would use. " +
+                    "Keep product, company and model names in their original form. Reply with the keywords only.", q, json = false, maxTokens = 30)
+                .trim().trim('"', '“', '”')
+            if (zh.isNotBlank() && zh != q && zh.length <= 40) queries += zh
+        }
+        val found = LinkedHashMap<String, ApiItem>()
+        for (term in queries) {
+            val url = "${AIHot.BASE}/api/v1/items?limit=40&mode=all&window=7d&q=" + URLEncoder.encode(term, "UTF-8")
+            val arr = runCatching { JSONObject(Net.get(url) ?: "{}").optJSONArray("items") }.getOrNull() ?: continue
+            for (i in 0 until arr.length()) AIHot.parseV1(arr.getJSONObject(i)).let { found.putIfAbsent(it.id, it) }
+        }
+        val api = found.values.sortedByDescending { it.discoveredAt ?: 0 }
+        val todo = api.filter { !cache.containsKey(it.id) }
+        if (todo.isNotEmpty() && s.translation == "deepseek") {
+            val r = Translator.items(todo, s)
+            todo.forEach { a -> r[a.id]?.takeIf { it.spoken != null }?.let { cache[a.id] = it } }
+            withContext(Dispatchers.IO) { saveCache(ctx) }
+        }
+        api.map { NewsItem.from(it, cache[it.id]) }
+    }
+
     private fun translate(ctx: Context, mode: String, todo: List<ApiItem>) {
         val s = Settings.get(ctx)
         if (todo.isEmpty() || s.translation != "deepseek" || s.deepseekKey.isBlank()) return

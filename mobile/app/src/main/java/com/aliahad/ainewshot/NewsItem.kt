@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** A translated item shown in the feed, alerts and popups. */
 data class NewsItem(
     val id: String,
-    val kind: String = "news",            // news | briefing | podcast
+    val kind: String = "news",            // news | trending | briefing | podcast
     val title: String,
     val summary: String,
     val zhTitle: String = "",
@@ -27,6 +27,10 @@ data class NewsItem(
     val alerted: Boolean = false,
     val episodeId: String? = null,
     val markdown: String? = null,
+    val eventKey: String? = null,         // AIHOT event group (factId): reports of the same story share it
+    val extraSources: Int = 0,            // other outlets AIHOT merged into this story
+    val topics: List<String> = emptyList(), // followed topics this matched (labels)
+    val storyId: String? = null,          // AIHOT event page (trending)
 ) {
     val speechText: String get() = spoken?.takeIf { it.isNotBlank() } ?: "$title. $summary"
     val link: String? get() = originalUrl ?: aihotUrl
@@ -41,6 +45,8 @@ data class NewsItem(
         put("publishedAt", publishedAt ?: JSONObject.NULL); put("discoveredAt", discoveredAt)
         put("tags", JSONArray(tags)); put("firstParty", firstParty); put("alerted", alerted)
         put("episodeId", episodeId ?: JSONObject.NULL); put("markdown", markdown ?: JSONObject.NULL)
+        put("eventKey", eventKey ?: JSONObject.NULL); put("extraSources", extraSources)
+        put("topics", JSONArray(topics)); put("storyId", storyId ?: JSONObject.NULL)
     }
 
     companion object {
@@ -54,6 +60,8 @@ data class NewsItem(
             discoveredAt = o.optLong("discoveredAt", System.currentTimeMillis()),
             tags = o.optJSONArray("tags").strings(), firstParty = o.optBoolean("firstParty"),
             alerted = o.optBoolean("alerted"), episodeId = o.str("episodeId"), markdown = o.str("markdown"),
+            eventKey = o.str("eventKey"), extraSources = o.optInt("extraSources"),
+            topics = o.optJSONArray("topics").strings(), storyId = o.str("storyId"),
         )
 
         fun from(a: ApiItem, r: Rendered?) = NewsItem(

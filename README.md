@@ -38,15 +38,20 @@ The app-op numbers were decoded from the phone's own `miui-framework.jar` (`com.
 
 **Staying alive:**
 - A foreground service checks every 90 s while the CPU is awake.
-- An allow-while-idle alarm wakes the phone every ~4 min with a short wakelock, because a sleeping CPU freezes ordinary timers.
+- An allow-while-idle alarm wakes the phone every ~4 min with a short wakelock, because a sleeping CPU freezes ordinary timers. In deep Doze, Android spaces these to about 10–15 min.
 - WorkManager runs a 15-min backup check, and live alerts restart after a reboot or update.
-- A watchdog records any gap longer than 20 min and warns you, since that usually means HyperOS froze the app.
+- A watchdog records any period of 30+ min in which no check ran at all (failed checks, for example with no network, don't count), since that usually means HyperOS froze or killed the app. If you swipe the app away in Recents, it restarts itself within a second.
 
 ## What it does
 
 | Feature | How |
 |---|---|
 | **Live first-hand news** | The same list as aihot.news › 精选 › 只看一手: announcements straight from OpenAI, Anthropic, Google, Hugging Face and others, about 8 a day. A foreground service checks every 90 s (cheap 304s when nothing changed). WorkManager runs a 15-min backup check, and live alerts restart after a reboot. |
+| **Trending now** | A Trending tab with AIHOT's live Top 10 (official `hot-topics`), each with a translated summary and a full **event story**: AI digest, latest development, and the coverage timeline with official sources marked. Optional **Trending alerts** fire when a story enters the top N with at least M sources. |
+| **Follow topics** | Pick from AIHOT's 37 topics (Anthropic, OpenAI, Agents, Coding, Model releases…). Curated stories on those topics are alerted too, not only first-hand posts, and the first tab becomes **For you**. |
+| **One alert per event** | AIHOT's event groups (`factId`) plus a headline-similarity check: the same launch reported by several outlets produces one alert and one feed row marked "+N sources", with "Also reported by" on the story. |
+| **Corrections & retractions** | Official `selected/snapshot` + `selected/changes` sync: corrected stories are updated and re-translated, and stories AIHOT withdraws leave the feed, held alerts and the popup (as AIHOT's terms §7 require). |
+| **Never miss, never repeat** | Unread dots and a "What did I miss" screen with a spoken rundown and Mark all read. **Save** stories for later. **Search** the last 7 days of all news (English queries also search the Chinese). The always-on notification shows the latest headline. A **home-screen widget** shows the newest headlines and your unread count. |
 | **All news, no social media** | Three tabs: **First-hand** (official announcements, the ones that pop up), **Curated** (AIHOT's editors' picks), and **All news** (everything from the last 7 days). Pages load as you scroll and are translated in the background, with translations cached on disk. |
 | **English everywhere** | DeepSeek (`deepseek-flash`, thinking off) translates and summarizes in batches, and writes a short spoken version of each story. If it's unavailable, the app shows the source's own English headline. |
 | **Forced popup** | With *Display over other apps* allowed, a full-screen alert card opens over whatever app you're in. On the lock screen it wakes the display. Taps are ignored for the first 0.8 s so you can't hit a button by accident. Three or more stories arrive as one digest with a spoken rundown. |

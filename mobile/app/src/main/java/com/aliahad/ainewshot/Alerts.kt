@@ -111,12 +111,13 @@ object Alerts {
     fun dismiss(id: String) { queue.value = queue.value.filterNot { it.id == id } }
     fun clear() { queue.value = emptyList() }
 
-    fun liveNotification(ctx: Context, text: String): Notification {
+    fun liveNotification(ctx: Context, title: String, text: String): Notification {
         val open = PendingIntent.getActivity(ctx, 2, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(ctx, CH_LIVE)
             .setSmallIcon(R.drawable.ic_bolt)
-            .setContentTitle("Watching for AI news")
+            .setContentTitle(title)
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
             .setSilent(true)
             .setContentIntent(open)

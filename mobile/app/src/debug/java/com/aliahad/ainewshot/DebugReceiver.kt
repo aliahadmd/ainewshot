@@ -18,6 +18,12 @@ class DebugReceiver : BroadcastReceiver() {
                     "com.aliahad.ainewshot.DEBUG_PODCAST" -> PodcastService.start(ctx, intent.getIntExtra("days", 1), announce = true)
                     "com.aliahad.ainewshot.DEBUG_PLAY" -> { PodcastStudio.load(ctx); PodcastStudio.episodes.value.firstOrNull()?.let { PodcastPlayer.play(ctx, it) } }
                     "com.aliahad.ainewshot.DEBUG_PAUSE" -> PodcastPlayer.pause()
+                    "com.aliahad.ainewshot.DEBUG_BRIEFING" -> CoroutineScope(Dispatchers.Default).launch {   // outlives the broadcast
+                        NewsRepo.makeBriefing(ctx, "api/v1/agent/daily", "Daily")?.let {
+                            NewsRepo.briefing.value = it; NewsRepo.persist(ctx)
+                            NewsRepo.deliver(ctx, listOf(it.copy(id = it.id + "-debug" + System.currentTimeMillis())), bypassRate = true)
+                        }
+                    }
                     else -> {
                         val n = intent.getIntExtra("count", 1)
                         val items = NewsRepo.recent.value.take(n).map { it.copy(id = "debug-${it.id}-${System.currentTimeMillis()}") }

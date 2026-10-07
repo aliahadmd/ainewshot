@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@drawable/widget_bg" android:padding="12dp">
+    <LinearLayout android:id="@+id/header" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="⚡ AI News Hot" android:textColor="#FFD54A" android:textSize="14sp" android:textStyle="bold"/>
+        <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#9AA3B2" android:textSize="11sp"/>
+    </LinearLayout>
+    <TextView android:id="@+id/empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="8dp"
+        android:text="Open the app once to load news." android:textColor="#9AA3B2" android:textSize="12sp"/>
+    <LinearLayout android:id="@+id/row0" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="vertical" android:gravity="center_vertical" android:paddingTop="3dp" android:paddingBottom="3dp" android:visibility="gone">
+        <TextView android:id="@+id/title0" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#F2F4F8" android:textSize="13sp" android:maxLines="2" android:ellipsize="end" android:fontFamily="sans-serif-medium"/>
+        <TextView android:id="@+id/meta0" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#9AA3B2" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/row1" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="vertical" android:gravity="center_vertical" android:paddingTop="3dp" android:paddingBottom="3dp" android:visibility="gone">
+        <TextView android:id="@+id/title1" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#F2F4F8" android:textSize="13sp" android:maxLines="2" android:ellipsize="end" android:fontFamily="sans-serif-medium"/>
+        <TextView android:id="@+id/meta1" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#9AA3B2" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/row2" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="vertical" android:gravity="center_vertical" android:paddingTop="3dp" android:paddingBottom="3dp" android:visibility="gone">
+        <TextView android:id="@+id/title2" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#F2F4F8" android:textSize="13sp" android:maxLines="2" android:ellipsize="end" android:fontFamily="sans-serif-medium"/>
+        <TextView android:id="@+id/meta2" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#9AA3B2" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/row3" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="vertical" android:gravity="center_vertical" android:paddingTop="3dp" android:paddingBottom="3dp" android:visibility="gone">
+        <TextView android:id="@+id/title3" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#F2F4F8" android:textSize="13sp" android:maxLines="2" android:ellipsize="end" android:fontFamily="sans-serif-medium"/>
+        <TextView android:id="@+id/meta3" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textColor="#9AA3B2" android:textSize="11sp" android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+</LinearLayout>
