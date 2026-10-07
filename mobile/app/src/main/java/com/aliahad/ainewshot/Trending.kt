@@ -24,6 +24,14 @@ data class TrendTopic(
     val aihotUrl: String?,
     val originalUrl: String?,
     val storyUrl: String?,
+    // From the site's hot list (the official hot-topics leaves these out):
+    val heat: Double? = null,
+    val trend: String? = null,          // up | down | flat
+    val trendPct: Double? = null,
+    val participants: Int = 0,
+    val latest: String? = null,         // English: latest development
+    val cover: String? = null,
+    val spark: List<Double> = emptyList(),
 )
 
 /** "Trending now": official /api/v1/hot-topics + /api/v1/stories/{id}, translated and cached. */
@@ -34,11 +42,48 @@ object Trending {
     private val lock = Mutex()
     private val digests = ConcurrentHashMap<String, Pair<Long, String>>()     // storyId -> (latestAt, zh digest)
     private val rendered = ConcurrentHashMap<String, Rendered>()              // "$id|$zhTitle" -> English
-    /** Last story JSON facts we saw (for follow-ups): storyId -> (latestAt, latest). */
+    /** Last story facts we saw (for follow-ups): storyId -> (latestAt, latest). */
     val storyMeta = ConcurrentHashMap<String, Pair<Long, String?>>()
 
     suspend fun refresh(ctx: Context, force: Boolean = false): List<TrendTopic> = lock.withLock {
         try {
+            val list = runCatching { refreshSite(ctx, force) }.getOrElse { e ->
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "site hot list, using the official one", e)
+                refreshV1(ctx, force)
+            }
+            updated.value = System.currentTimeMillis()
+            error.value = null
+            list
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "trending", e)
+            error.value = e.message ?: e.toString()
+            topics.value
+        }
+    }
+
+    /** /hot as the site shows it: heat index, trend, participants, AI summary and latest development. */
+    private suspend fun refreshSite(ctx: Context, force: Boolean): List<TrendTopic> {
+        val (_, entries) = Site.hot(conditional = !force && topics.value.isNotEmpty()) ?: return topics.value   // 304
+        fun src(e: Site.HotEntry) = ApiItem(id = "hot:${e.storyId}:${e.title.hashCode()}:${e.latest.hashCode()}", title = e.title, originalTitle = null,
+            summary = e.summary?.take(700), sourceName = "", aihotUrl = null, originalUrl = null, publishedAt = null, discoveredAt = null,
+            category = null, score = null, reason = e.latest)
+        fun topic(e: Site.HotEntry, r: Rendered?) = TrendTopic(
+            rank = e.rank, id = e.storyId, storyId = e.storyId, zhTitle = e.title, title = r?.title ?: e.title,
+            summary = r?.summary ?: e.summary.orEmpty(), sourceCount = e.sources, sourceNames = e.sourceNames, latestAt = null,
+            aihotUrl = "${AIHot.BASE}/story/${e.storyId}", originalUrl = null, storyUrl = "${AIHot.BASE}/story/${e.storyId}",
+            heat = e.heat, trend = e.trend, trendPct = e.trendPct, participants = e.participants,
+            latest = r?.why ?: e.latest, cover = e.cover, spark = e.spark,
+        )
+        // Show the list right away from cache, then translated.
+        topics.value = entries.map { topic(it, Browse.cached(ctx, src(it).id)) }
+        val r = Browse.rendered(ctx, entries.map { src(it) })
+        return entries.map { topic(it, r[src(it).id]) }.also { topics.value = it }
+    }
+
+    private suspend fun refreshV1(ctx: Context, force: Boolean): List<TrendTopic> {
+        run {
             val body = Net.get("${AIHot.BASE}/api/v1/hot-topics", conditional = !force || topics.value.isNotEmpty())
             if (body == null) { updated.value = System.currentTimeMillis(); return topics.value }   // 304: unchanged
             val arr = JSONObject(body).getJSONArray("items")
@@ -72,14 +117,7 @@ object Trending {
             }
             val list = raw.map { toTopic(it) }
             topics.value = list
-            updated.value = System.currentTimeMillis()
-            error.value = null
-            list
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.w(TAG, "trending", e)
-            error.value = e.message ?: e.toString()
-            topics.value
+            return list
         }
     }
 
@@ -107,31 +145,4 @@ object Trending {
         publishedAt = t.latestAt, spoken = "Trending now, across ${t.sourceCount} sources: ${t.title}. ${t.summary}",
         storyId = t.storyId,
     )
-
-    /**
-     * Full event view: AI digest, latest development, and the coverage timeline (official sources marked),
-     * built as Chinese Markdown from the official story JSON and translated in one pass.
-     */
-    suspend fun storyDoc(ctx: Context, storyId: String): Doc {
-        val st = JSONObject(Net.get("${AIHot.BASE}/api/v1/stories/$storyId") ?: "{}").getJSONObject("story")
-        storyMeta[storyId] = (parseTime(st.str("latestAt")) ?: 0L) to st.str("latest")
-        val sb = StringBuilder()
-        sb.append("# ").append(st.optString("title")).append("\n\n")
-        sb.append("**").append(st.optInt("sourceCount")).append(" 个信源 · ").append(st.optInt("reportCount")).append(" 篇报道**\n\n")
-        st.str("latest")?.let { sb.append("## 最新进展\n").append(it).append("\n\n") }
-        st.str("digest")?.let { sb.append("## 来龙去脉\n").append(it).append("\n\n") }
-        val reports = st.optJSONArray("reports") ?: JSONArray()
-        if (reports.length() > 0) sb.append("## 报道时间线\n")
-        for (i in 0 until minOf(reports.length(), 25)) {
-            val r = reports.getJSONObject(i)
-            val src = r.optJSONObject("source")
-            val official = src?.optBoolean("firstParty") == true
-            val url = r.optJSONObject("links")?.let { it.str("original") ?: it.str("aihot") }
-            val time = r.str("publishedAt")?.take(16)?.replace('T', ' ') ?: ""
-            sb.append("- ").append(time).append(" · ")
-            if (url != null) sb.append("[").append(r.optString("title")).append("](").append(url).append(")") else sb.append(r.optString("title"))
-            sb.append(" · ").append(AIHot.cleanSource(src?.optString("name") ?: "")).append(if (official) " ✓一手" else "").append("\n")
-        }
-        return Translator.document(sb.toString(), "event story with a coverage timeline (keep '✓一手' as '✓ official')", Settings.get(ctx))
-    }
 }

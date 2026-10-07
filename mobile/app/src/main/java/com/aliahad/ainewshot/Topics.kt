@@ -14,6 +14,7 @@ object Topics {
         Topic("deepseek", "DeepSeek", "Companies", setOf("DeepSeek"), listOf("deepseek", "深度求索")),
         Topic("qwen", "Qwen", "Companies", setOf("Qwen", "千问", "阿里"), listOf("qwen", "千问", "通义")),
         Topic("kimi", "Kimi / Moonshot", "Companies", setOf("Kimi", "月之暗面"), listOf("kimi", "moonshot", "月之暗面")),
+        Topic("minimax", "MiniMax", "Companies", setOf("MiniMax"), listOf("minimax", "海螺")),
         Topic("zhipu", "Zhipu GLM", "Companies", setOf("智谱"), listOf("glm-", "zhipu", "智谱", "z.ai")),
         Topic("xai", "xAI / Grok", "Companies", setOf("xAI"), listOf("xai", "grok")),
         Topic("meta", "Meta / Llama", "Companies", setOf("Meta"), listOf("llama", "meta ai")),

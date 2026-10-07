@@ -26,7 +26,7 @@ class DebugReceiver : BroadcastReceiver() {
                     }
                     else -> {
                         val n = intent.getIntExtra("count", 1)
-                        val items = NewsRepo.recent.value.take(n).map { it.copy(id = "debug-${it.id}-${System.currentTimeMillis()}") }
+                        val items = NewsRepo.recent.value.take(n)   // real ids, so Read opens the real article
                         NewsRepo.deliver(ctx, items, bypassRate = true)
                     }
                 }

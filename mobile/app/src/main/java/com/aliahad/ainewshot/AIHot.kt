@@ -23,6 +23,17 @@ data class ApiItem(
     val selected: Boolean = false,
     val tags: List<String> = emptyList(),
     val firstParty: Boolean = false,
+    // Site extras (timeline cards): event group, X post author/media and the post it quotes.
+    val factId: String? = null,
+    val extraSources: Int = 0,
+    val reportCount: Int = 0,
+    val channel: String? = null,          // news | x
+    val handle: String? = null,
+    val avatarUrl: String? = null,
+    val imageUrl: String? = null,
+    val imageRatio: Float? = null,
+    val quoteAuthor: String? = null,
+    val quoteText: String? = null,
 )
 
 fun JSONObject.str(k: String): String? = if (isNull(k)) null else optString(k).takeIf { it.isNotEmpty() }
@@ -56,8 +67,11 @@ object AIHot {
     }
 
     /** Item from the site timeline behind https://aihot.news/?channel=firstParty (undocumented). */
-    fun parseTimeline(o: JSONObject, firstParty: Boolean = true): ApiItem {
+    fun parseTimeline(o: JSONObject, firstParty: Boolean = true, group: JSONObject? = null): ApiItem {
         val id = o.getString("id")
+        val x = o.optJSONObject("x")
+        val media = x?.optJSONArray("media")?.let { m -> (0 until m.length()).map { m.getJSONObject(it) }.firstOrNull { it.optString("kind") != "video" || it.str("poster") != null } }
+        val quoted = x?.optJSONObject("quoted")
         return ApiItem(
             id = id,
             title = o.optString("title"),
@@ -71,18 +85,32 @@ object AIHot {
             category = o.str("category"),
             score = o.intOrNull("score"),
             reason = o.str("reason"),
-            selected = true,
+            selected = o.optBoolean("selected", true),
+            channel = o.str("channel"),
             tags = o.optJSONArray("tags").strings(),
             firstParty = firstParty,
+            factId = group?.str("factId"),
+            extraSources = group?.optInt("additionalSourceCount") ?: 0,
+            reportCount = group?.optInt("reportCount") ?: 0,
+            handle = x?.str("handle"),
+            avatarUrl = img(x?.str("avatarUrl")),
+            imageUrl = img(media?.let { it.str("poster") ?: it.str("url") }),
+            imageRatio = media?.let { m -> val w = m.optDouble("width"); val h = m.optDouble("height"); if (w > 0 && h > 0) (w / h).toFloat() else null },
+            quoteAuthor = quoted?.let { q -> listOfNotNull(q.str("authorName"), q.str("handle")?.let { "@$it" }).joinToString(" ") },
+            quoteText = quoted?.let { it.str("text") ?: it.str("translation") },
         )
     }
 
-    /** A page of the site timeline. `groups` maps a card's lead item to AIHOT's event group (same story, several reports). */
-    data class TimelinePage(val items: List<ApiItem>, val next: String?, val groups: Map<String, Pair<String, Int>>)
+    /** AIHOT serves images through its signed proxy with relative URLs. */
+    fun img(u: String?): String? = u?.let { if (it.startsWith("/")) BASE + it else it }
 
-    /** channel = "firstParty" for 只看一手, null for all curated (精选). */
-    suspend fun timeline(channel: String?, cursor: String? = null, conditional: Boolean = true): TimelinePage? {
-        val q = listOfNotNull(channel?.let { "channel=$it" }, cursor?.let { "cursor=" + enc(it) }).joinToString("&")
+    /** A page of the site timeline. `groups` maps a card's lead item to AIHOT's event group (same story, several reports). */
+    data class TimelinePage(val items: List<ApiItem>, val next: String?, val groups: Map<String, Pair<String, Int>>,
+                            val dayCounts: Map<String, Int> = emptyMap())
+
+    /** channel = "firstParty" for 只看一手, null for all curated (精选); category = ai-models, paper, … */
+    suspend fun timeline(channel: String?, cursor: String? = null, conditional: Boolean = true, category: String? = null): TimelinePage? {
+        val q = listOfNotNull(channel?.let { "channel=$it" }, category?.let { "category=$it" }, cursor?.let { "cursor=" + enc(it) }).joinToString("&")
         val body = Net.get("$BASE/api/site/timeline" + (if (q.isNotEmpty()) "?$q" else ""), conditional) ?: return null
         val o = JSONObject(body)
         val cards = o.getJSONArray("cards")
@@ -90,11 +118,13 @@ object AIHot {
         val groups = mutableMapOf<String, Pair<String, Int>>()
         for (i in 0 until cards.length()) {
             val c = cards.getJSONObject(i)
-            val it = parseTimeline(c.getJSONObject("item"), firstParty = channel == "firstParty")
-            items += it
-            c.optJSONObject("group")?.let { g -> g.str("factId")?.let { f -> groups[it.id] = f to g.optInt("additionalSourceCount") } }
+            val g = c.optJSONObject("group")
+            val item = parseTimeline(c.getJSONObject("item"), firstParty = channel == "firstParty", group = g)
+            items += item
+            g?.str("factId")?.let { f -> groups[item.id] = f to g.optInt("additionalSourceCount") }
         }
-        return TimelinePage(items, o.str("nextCursor"), groups)
+        val days = o.optJSONObject("dayCounts")?.let { d -> d.keys().asSequence().associateWith { d.optInt(it) } } ?: emptyMap()
+        return TimelinePage(items, o.str("nextCursor"), groups, days)
     }
 
     /** Ids of every report AIHOT merged into one event. */
@@ -154,9 +184,10 @@ object AIHot {
         return name.trim()
     }
 
+    /** AIHOT's filter chips (精选 › 模型 / 产品 / 行业 / 论文 / 教程 / 观点). */
     val categories = listOf(
         "ai-models" to "Models", "ai-products" to "Products", "industry" to "Industry",
-        "paper" to "Research", "tip" to "Tips & Opinion",
+        "paper" to "Papers", "tip" to "Tutorials", "opinion" to "Opinion",
     )
     fun categoryLabel(id: String?) = categories.firstOrNull { it.first == id }?.second ?: "News"
 

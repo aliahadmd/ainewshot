@@ -1,5 +1,7 @@
 package com.aliahad.ainewshot.ui
 
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+
 import android.app.TimePickerDialog
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -68,7 +70,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onSetup: () -> Unit) {
+fun SettingsScreen(onSetup: () -> Unit, onBack: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val s = Settings.get(ctx)
     val v by s.version.collectAsState()
@@ -80,7 +82,11 @@ fun SettingsScreen(onSetup: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Settings") })
+        TopAppBar(title = { Text("Settings") }, navigationIcon = {
+            if (onBack != null) androidx.compose.material3.IconButton(onClick = onBack) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, "Back")
+            }
+        })
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             // Reading `v` makes switches/choices reflect saved values immediately; text fields keep their own state.
@@ -143,7 +149,7 @@ private fun AlertsSection(ctx: Context, s: Settings) {
             else -> "Every AI story, hundreds a day. Use keywords or a higher score below."
         })
         // First-hand items all score 60+, so the score filter only means something for the wider feeds.
-        if (s.feedMode != "firstParty") LabeledSlider("Minimum AIHOT score", s.minScore, 0..90, hint = "Curated items score 60–85. 0 = everything in the feed above.") { s.minScore = it }
+        if (s.feedMode != "firstParty") LabeledSlider("Minimum AIHOT score", s.minScore, 0..90, hint = "Selected items score 60–85. 0 = everything in the feed above.") { s.minScore = it }
         Field("Always alert on keywords", s.includeKeywords, "claude, anthropic, deepseek") { s.includeKeywords = it }
         Field("Never alert on keywords", s.excludeKeywords, "crypto, funding round") { s.excludeKeywords = it }
         Hint("Comma-separated. Also matches AIHOT tags such as Anthropic, Agent, Coding, Model release, Safety.")
@@ -168,7 +174,7 @@ private fun AlertsSection(ctx: Context, s: Settings) {
             LabeledSlider("Only stories in the top", s.trendingTopRank, 1..10) { s.trendingTopRank = it }
             LabeledSlider("Covered by at least (sources)", s.trendingMinSources, 3..20) { s.trendingMinSources = it }
         }
-        Hint("The Trending tab in News always shows the live Top 10, whether or not alerts are on.")
+        Hint("The Hot tab always shows the live Top 10, whether or not alerts are on.")
     }
     Group("How alerts appear") {
         ChoiceRow(null, listOf("fullscreen" to "Pop up over apps", "notification" to "Notification only"), s.popupMode) { s.popupMode = it }
@@ -264,7 +270,7 @@ private fun PodcastSection(ctx: Context, s: Settings) {
     Group("Show") {
         ChoiceRow("Hosts", listOf("duo" to "Two hosts", "solo" to "One host"), s.podFormat) { s.podFormat = it }
         ChoiceRow("Length", listOf(0 to "Auto", 5 to "5 min", 10 to "10 min", 15 to "15 min", 20 to "20 min", 30 to "30 min"), s.podLengthMin) { s.podLengthMin = it }
-        ChoiceRow("Coverage", listOf("all" to "All news", "selected" to "Curated", "firstParty" to "First-hand"), s.podCoverage) { s.podCoverage = it }
+        ChoiceRow("Coverage", listOf("all" to "All news", "selected" to "Selected", "firstParty" to "First-hand"), s.podCoverage) { s.podCoverage = it }
         ChoiceRow("Tone", PodStyle.tones.map { it.first to it.second }, s.podTone) { s.podTone = it }
         ChoiceRow("Emotion", listOf(1 to "Subtle", 2 to "Natural", 3 to "Expressive"), s.podExpressiveness) { s.podExpressiveness = it }
         Toggle("Sung intro jingle", "MiMo singing mode.", s.podJingle) { s.podJingle = it }

@@ -2,7 +2,6 @@ package com.aliahad.ainewshot
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -165,7 +164,11 @@ private fun CardBody(ctx: Context, item: NewsItem, index: Int, count: Int, armed
                     } else if (item.kind == "trending" && item.storyId != null) {
                         ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("story", item.storyId).putExtra("title", item.title)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-                    } else item.link?.let { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    } else {
+                        // The in-app article: full text in English, with the original one tap away.
+                        ctx.startActivity(Intent(ctx, MainActivity::class.java).putExtra("item", item.id)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                    }
                     onDismiss()
                 }, modifier = Modifier.weight(1f)) { Text(when (item.kind) { "trending" -> "Read story"; "briefing" -> "Read briefing"; else -> "Read" }) }
                 FilledTonalButton(enabled = armed, onClick = { Speaker.toggle(ctx, item) }) {

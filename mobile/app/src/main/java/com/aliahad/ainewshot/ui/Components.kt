@@ -61,23 +61,75 @@ fun <T> ChoiceRow(label: String?, options: List<Pair<T, String>>, selected: T, o
 /** Minimal block-level Markdown renderer with clickable links. */
 @Composable
 fun MarkdownText(md: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (raw in md.lines()) {
-            val t = raw.trim()
-            when {
-                t.isEmpty() -> Spacer(Modifier.height(2.dp))
-                t.startsWith("### ") -> Text(inline(t.drop(4)), style = MaterialTheme.typography.titleSmall)
-                t.startsWith("## ") -> Text(inline(t.drop(3)), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-                t.startsWith("# ") -> Text(inline(t.drop(2)), style = MaterialTheme.typography.headlineSmall)
-                t.startsWith("- ") || t.startsWith("* ") -> Row {
-                    Text("•  "); Text(inline(t.drop(2)), style = MaterialTheme.typography.bodyMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { mdBlocks(md).forEach { MarkdownBlock(it) } }
+}
+
+/** Lines, except that a ``` fenced block stays together (so long articles can be shown one block per list row). */
+fun mdBlocks(md: String): List<String> {
+    val out = mutableListOf<String>()
+    var fence: StringBuilder? = null
+    var table: StringBuilder? = null
+    for (line in md.lines()) {
+        // Consecutive "| a | b" rows form one table block.
+        if (fence == null && line.trimStart().startsWith("|")) { (table ?: StringBuilder().also { table = it }).append(line).append('\n'); continue }
+        table?.let { out += it.toString().trimEnd(); table = null }
+        if (line.trim().startsWith("```")) {
+            if (fence == null) { fence = StringBuilder(line).append('\n') } else { fence.append(line); out += fence.toString(); fence = null }
+        } else if (fence != null) fence.append(line).append('\n')
+        else out += line
+    }
+    fence?.let { out += it.toString() }
+    table?.let { out += it.toString().trimEnd() }
+    return out
+}
+
+fun isHeading(block: String) = block.trimStart().let { it.startsWith("# ") || it.startsWith("## ") || it.startsWith("### ") || it.startsWith("#### ") }
+
+@Composable
+fun MarkdownBlock(raw: String) {
+    val t = raw.trim()
+    when {
+        t.isEmpty() -> Spacer(Modifier.height(2.dp))
+        t.startsWith("```") -> Text(t.removePrefix("```").substringAfter('\n').removeSuffix("```").trimEnd(),
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp,
+            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+                .horizontalScroll(rememberScrollState()).padding(10.dp))
+        t.startsWith("|") -> MarkdownTable(t)
+        t.startsWith("#### ") -> Text(inline(t.drop(5)), style = MaterialTheme.typography.titleSmall)
+        t.startsWith("### ") -> Text(inline(t.drop(4)), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+        t.startsWith("## ") -> Text(inline(t.drop(3)), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
+        t.startsWith("# ") -> Text(inline(t.drop(2)), style = MaterialTheme.typography.headlineSmall)
+        t.startsWith("> ") -> Row(Modifier.fillMaxWidth()) {
+            Box(Modifier.width(3.dp).height(20.dp).background(MaterialTheme.colorScheme.outline))
+            Text(inline(t.drop(2)), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 10.dp))
+        }
+        t.startsWith("- ") || t.startsWith("* ") -> Row {
+            Text("•  "); Text(inline(t.drop(2)), style = MaterialTheme.typography.bodyMedium)
+        }
+        t == "---" -> HorizontalDivider()
+        t.startsWith("【") || (t.startsWith("[") && t.endsWith("]") && !t.contains("](")) ->
+            Text(t.trim('【', '】', '[', ']'), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
+        else -> Text(inline(t), style = MaterialTheme.typography.bodyMedium,
+            color = if (raw.startsWith("   ")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = if (raw.startsWith("   ")) 18.dp else 0.dp))
+    }
+}
+
+@Composable
+private fun MarkdownTable(block: String) {
+    val raw = block.lines().map { r -> r.trim().removePrefix("|").removeSuffix("|").split("|").map { it.trim() } }
+        .filterNot { r -> r.all { c -> c.isEmpty() || c.all { ch -> ch == '-' || ch == ':' } } }
+    // Rows can disagree by a stray leading "|" (e.g. after translation): align them to the usual column count.
+    val cols = raw.groupingBy { it.size }.eachCount().maxByOrNull { it.value }?.key ?: return
+    val rows = raw.map { r -> var x = r; while (x.size > cols && x.first().isEmpty()) x = x.drop(1); x }
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(8.dp))) {
+        rows.forEachIndexed { i, r ->
+            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (c in 0 until cols) {
+                    Text(inline(r.getOrElse(c) { "" }), style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (i == 0 || c == 0) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.weight(1f))
                 }
-                t == "---" -> HorizontalDivider()
-                t.startsWith("【") || (t.startsWith("[") && t.endsWith("]") && !t.contains("](")) ->
-                    Text(t.trim('【', '】', '[', ']'), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
-                else -> Text(inline(t), style = MaterialTheme.typography.bodyMedium,
-                    color = if (raw.startsWith("   ")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = if (raw.startsWith("   ")) 18.dp else 0.dp))
             }
         }
     }

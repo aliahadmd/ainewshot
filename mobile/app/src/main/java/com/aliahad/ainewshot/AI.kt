@@ -108,6 +108,61 @@ object Translator {
         return Doc(cleaned, "")
     }
 
+    /** Short standalone Chinese strings (headlines, labels, digests) -> English, same order. Falls back to the input. */
+    suspend fun plain(texts: List<String>, s: Settings): List<String> = coroutineScope {
+        if (texts.isEmpty() || s.translation != "deepseek" || s.deepseekKey.isBlank()) return@coroutineScope texts
+        val ds = DeepSeek(s.deepseekKey, s.deepseekModel)
+        val system = """
+            Translate each Chinese string in the JSON array "t" into natural English. $GUARD
+            Keep names of companies, models and products exactly as their makers write them. Translate faithfully; do not shorten.
+            Return the same number of strings in the same order; strings already in English stay unchanged.
+            Reply JSON only: {"t":[...]}
+        """.trimIndent()
+        texts.chunked(16).map { chunk ->
+            async {
+                runCatching {
+                    val arr = JSONObject(ds.chat(system, JSONObject().put("t", JSONArray(chunk)).toString(), json = true)).getJSONArray("t")
+                    if (arr.length() == chunk.size) (0 until arr.length()).map { arr.getString(it) } else chunk
+                }.getOrElse { Log.w(TAG, "plain translate", it); chunk }
+            }
+        }.awaitAll().flatten()
+    }
+
+    /**
+     * A full article (Markdown) in ~2,500-character pieces, four at a time, so the first screen appears in seconds.
+     * [onPiece] reports each piece as it lands; a piece that fails stays in Chinese rather than blocking the rest.
+     */
+    suspend fun article(md: String, s: Settings, onCount: (Int) -> Unit = {}, onPiece: (Int, String) -> Unit): List<String> = coroutineScope {
+        val pieces = mutableListOf<String>()
+        val cur = StringBuilder()
+        for (para in md.split(Regex("\n{2,}"))) {
+            if (cur.isNotEmpty() && cur.length + para.length > 2500) { pieces += cur.toString(); cur.clear() }
+            if (cur.isNotEmpty()) cur.append("\n\n")
+            cur.append(para)
+        }
+        if (cur.isNotBlank()) pieces += cur.toString()
+        if (s.translation != "deepseek" || s.deepseekKey.isBlank()) return@coroutineScope pieces
+        onCount(pieces.size)
+        val ds = DeepSeek(s.deepseekKey, s.deepseekModel)
+        val gate = kotlinx.coroutines.sync.Semaphore(4)
+        val system = """
+            Translate this part of a Chinese news article (Markdown) into natural, fluent English Markdown. $GUARD
+            Keep every heading level, list item, link URL, code block, table row and number exactly. Keep names of companies,
+            models and products as their makers write them. Translate everything; do not summarise or add anything.
+            Output only the translated Markdown.
+        """.trimIndent()
+        pieces.mapIndexed { i, piece ->
+            async {
+                gate.acquire()
+                try {
+                    val en = if (isLatin(piece)) piece else runCatching { ds.chat(system, piece, json = false, maxTokens = 4000).trim() }
+                        .getOrElse { Log.w(TAG, "article piece $i", it); piece }
+                    onPiece(i, en); en
+                } finally { gate.release() }
+            }
+        }.awaitAll()
+    }
+
     suspend fun explain(item: NewsItem, s: Settings): String {
         val system = """
             You brief a busy developer about one AI news item. $GUARD

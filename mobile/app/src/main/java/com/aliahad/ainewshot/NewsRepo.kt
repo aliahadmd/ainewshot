@@ -48,7 +48,7 @@ object NewsRepo {
     val recent = MutableStateFlow<List<NewsItem>>(emptyList())
     val saved = MutableStateFlow<List<NewsItem>>(emptyList())
     val readIds = MutableStateFlow<Set<String>>(emptySet())
-    /** Latest translated morning briefing (shown on the Briefings tab). */
+    /** Latest translated morning briefing (its Listen text is used on the Daily tab). */
     val briefing = MutableStateFlow<NewsItem?>(null)
     /** Stories you follow for new developments: storyId -> what we last saw. */
     val followedStories = MutableStateFlow<Map<String, FollowedStory>>(emptyMap())

@@ -117,7 +117,7 @@ fun PodcastScreen(onOpen: (String) -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         ChoiceRow("Hosts", listOf("duo" to "Two hosts", "solo" to "One host"), s.podFormat) { s.podFormat = it }
                         ChoiceRow("Length", listOf(0 to "Auto", 5 to "5 min", 10 to "10 min", 15 to "15 min", 20 to "20 min", 30 to "30 min"), s.podLengthMin) { s.podLengthMin = it }
-                        ChoiceRow("Coverage", listOf("all" to "All news", "selected" to "Curated", "firstParty" to "First-hand"), s.podCoverage) { s.podCoverage = it }
+                        ChoiceRow("Coverage", listOf("all" to "All news", "selected" to "Selected", "firstParty" to "First-hand"), s.podCoverage) { s.podCoverage = it }
                         ChoiceRow("Tone", PodStyle.tones.map { it.first to it.second }, s.podTone) { s.podTone = it }
                         ChoiceRow("Emotion", listOf(1 to "Subtle", 2 to "Natural", 3 to "Expressive"), s.podExpressiveness) { s.podExpressiveness = it }
                     }

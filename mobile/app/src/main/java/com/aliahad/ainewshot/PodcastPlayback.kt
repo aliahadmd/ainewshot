@@ -75,7 +75,7 @@ class PodcastService : LifecycleService() {
         .setProgress(100, (p * 100).toInt(), p == 0f)
         .setOngoing(true).setSilent(true)
         .setContentIntent(android.app.PendingIntent.getActivity(this, 3,
-            Intent(this, MainActivity::class.java).putExtra("tab", 1), android.app.PendingIntent.FLAG_IMMUTABLE))
+            Intent(this, MainActivity::class.java).putExtra("tab", com.aliahad.ainewshot.ui.TAB_PODCAST), android.app.PendingIntent.FLAG_IMMUTABLE))
         .build()
 
     companion object {
