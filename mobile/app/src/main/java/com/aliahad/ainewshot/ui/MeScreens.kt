@@ -75,7 +75,7 @@ fun MeScreen() {
         LazyColumn(Modifier.fillMaxSize()) {
             item { MeRow("☆", "Saved", "${saved.size} stor${if (saved.size == 1) "y" else "ies"}") { nav.go(Route.Saved) } }
             item { MeRow("#", "Topics", if (following > 0) "Following $following · alerts for these" else "38 topics: companies, research areas, content types") { nav.go(Route.Topics) } }
-            item { MeRow("◎", "Catch up", if (unread > 0) "$unread unread first-hand stories" else "You're all caught up") { nav.go(Route.CatchUp) } }
+            item { MeRow("◎", "Catch up", if (unread > 0) "$unread unread stories" else "You're all caught up") { nav.go(Route.CatchUp) } }
             item { MeRow("⌕", "Search", "Everything from the last 7 days") { nav.go(Route.Search) } }
             item { Header("Tools") }
             item { MeRow("▤", "Model ranking", "AIHOT's leaderboard (opens aihot.news)") { ctx.openUrl("${AIHot.BASE}/leaderboard") } }

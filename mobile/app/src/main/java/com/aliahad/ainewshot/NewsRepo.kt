@@ -34,8 +34,8 @@ data class FeedStatus(
 
 /**
  * The alert engine.
- *  - Feed: first-hand timeline (= aihot.news 精选 › 只看一手), enriched by the official v1 API; pages back after
- *    being offline; falls back to official API + learned first-hand sources if the site endpoint changes.
+ *  - Feed: aihot.news 精选 (all categories by default, or 只看一手), enriched by the official v1 API; pages back after
+ *    being offline; falls back to the official API (+ learned first-hand sources) if the site endpoint changes.
  *  - Followed topics: curated stories tagged with a topic you follow are alerted too.
  *  - Trending: optional alerts when a story climbs AIHOT's Top 10 across many sources.
  *  - Corrections & retractions: official selected/snapshot + selected/changes (AIHOT terms §7).
@@ -56,6 +56,7 @@ object NewsRepo {
 
     private val mutex = Mutex()
     private var loaded = false
+    private val firstPartyIds = java.util.Collections.synchronizedSet(LinkedHashSet<String>())   // this session
     private val seen = LinkedHashSet<String>()
     private val alerted = LinkedHashSet<String>()
     private val curatedSeen = LinkedHashSet<String>()
@@ -188,9 +189,10 @@ object NewsRepo {
 
     // MARK: First-hand feed
 
-    private suspend fun firstPartyFeed(): List<ApiItem>? {
+    /** aihot.news › Selected, as the site shows it: channel "firstParty" (一手) or null (all categories). */
+    private suspend fun selectedFeed(channel: String?): List<ApiItem>? {
         return try {
-            val first = AIHot.timeline("firstParty") ?: return null
+            val first = AIHot.timeline(channel) ?: return null
             status.value = status.value.copy(note = null)
             val pages = mutableListOf(first)
             // Back from being offline: page back until we reach a story we already have (max 4 pages).
@@ -198,23 +200,33 @@ object NewsRepo {
                 var next = first.next
                 while (next != null && pages.size < 4 && pages.last().items.none { it.id in seen }) {
                     delay(700)
-                    val p = AIHot.timeline("firstParty", next, conditional = false) ?: break
+                    val p = AIHot.timeline(channel, next, conditional = false) ?: break
                     pages += p; next = p.next
                 }
             }
-            val items = pages.flatMap { it.items }
-            firstPartySources += items.map { it.sourceName }
+            if (channel == null) {
+                // Which of these are official? Ask the first-hand list too (usually a cheap 304).
+                runCatching { AIHot.timeline("firstParty") }.getOrNull()?.items?.let { fp ->
+                    firstPartyIds += fp.map { it.id }; firstPartySources += fp.map { it.sourceName }
+                }
+            }
+            val items = pages.flatMap { it.items }.map {
+                if (channel == null) it.copy(firstParty = it.id in firstPartyIds || it.sourceName in firstPartySources) else it
+            }
+            if (channel == "firstParty") firstPartySources += items.map { it.sourceName }
             learnGroups(pages.flatMap { it.groups.entries }.associate { it.key to it.value })
             runCatching { AIHot.items("selected") }.getOrNull()?.forEach { v1Cache[it.id] = it }
             items.map { t ->
                 val v = v1Cache[t.id]
-                if (v != null) v.copy(tags = t.tags, firstParty = true, discoveredAt = v.discoveredAt ?: t.discoveredAt) else t
+                if (v != null) v.copy(tags = t.tags, firstParty = t.firstParty, discoveredAt = v.discoveredAt ?: t.discoveredAt,
+                    factId = t.factId, extraSources = t.extraSources, reportCount = t.reportCount, channel = t.channel, handle = t.handle,
+                    avatarUrl = t.avatarUrl, imageUrl = t.imageUrl, imageRatio = t.imageRatio, quoteAuthor = t.quoteAuthor, quoteText = t.quoteText) else t
             }
         } catch (e: HttpError) {
             if (e.code == 429) throw e
-            fallback(e)
+            fallback(e, channel)
         } catch (e: org.json.JSONException) {
-            fallback(e)
+            fallback(e, channel)
         }
     }
 
@@ -231,8 +243,9 @@ object NewsRepo {
     }
 
     /** Site endpoint changed or blocked: official API filtered by the first-hand sources learned so far. */
-    private suspend fun fallback(e: Throwable): List<ApiItem>? {
-        Log.w(TAG, "first-hand timeline failed", e)
+    private suspend fun fallback(e: Throwable, channel: String?): List<ApiItem>? {
+        Log.w(TAG, "selected timeline ($channel) failed", e)
+        if (channel == null) return AIHot.items("selected")   // the official API has the same curated list
         status.value = status.value.copy(
             note = if (firstPartySources.isEmpty()) "First-hand feed unavailable; showing all curated news"
             else "First-hand feed unavailable; filtering by ${firstPartySources.size} known official sources")
@@ -243,7 +256,11 @@ object NewsRepo {
     private suspend fun checkNews(ctx: Context) {
         val s = Settings.get(ctx)
         try {
-            val items = if (s.feedMode == "firstParty") firstPartyFeed() else AIHot.items(s.feedMode)
+            val items = when (s.feedMode) {
+                "firstParty" -> selectedFeed("firstParty")
+                "selected" -> selectedFeed(null)
+                else -> AIHot.items("all")
+            }
             status.value = status.value.copy(lastCheck = System.currentTimeMillis(), error = null)
             items ?: return
             val fresh = items.filter { it.id !in seen }

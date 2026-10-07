@@ -106,9 +106,9 @@ fun SelectedScreen() {
         val f = Browse.feed(key).value
         if (f.items.isEmpty() || System.currentTimeMillis() - (f.updated ?: 0) > 5 * 60_000) Browse.refresh(ctx, key)
     }
-    // A new first-hand item reached the alert pipeline: show it here too.
+    // A new item reached the alert pipeline: show it here too.
     LaunchedEffect(recent.firstOrNull()?.id) {
-        val newest = recent.firstOrNull { it.kind == "news" && it.firstParty } ?: return@LaunchedEffect
+        val newest = recent.firstOrNull { it.kind == "news" } ?: return@LaunchedEffect
         if (view == "selected" && (chip == "all" || chip == "firstParty") && Browse.feed(key).value.items.none { it.id == newest.id }) Browse.refresh(ctx, key)
     }
     val nearEnd by remember { derivedStateOf { (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= list.layoutInfo.totalItemsCount - 6 } }
@@ -151,7 +151,8 @@ fun SelectedScreen() {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 }
                 if (view == "selected" && chip == "all") item { HotTopicsPanel() }
-                if (view == "selected" && chip == "firstParty") item {
+                // Unread banner on the chip your alerts come from.
+                if (view == "selected" && chip == (if (s.feedMode == "firstParty") "firstParty" else "all") && s.feedMode != "all") item {
                     Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { UnreadBanner { nav.go(Route.CatchUp) } }
                 }
                 if (following) item {

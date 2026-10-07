@@ -140,12 +140,12 @@ private fun AlertsSection(ctx: Context, s: Settings) {
         Waker.schedule(ctx)      // schedules or cancels the screen-off wake-ups
     }
     Group("What to alert me about") {
-        ChoiceRow(null, listOf("firstParty" to "First-hand (official)", "selected" to "All curated", "all" to "Everything"), s.feedMode) {
+        ChoiceRow(null, listOf("selected" to "Selected · All", "firstParty" to "Selected · First-hand", "all" to "All AI news"), s.feedMode) {
             if (it != s.feedMode) { s.feedMode = it; scope.launch { NewsRepo.check(ctx, force = true) } }
         }
         Hint(when (s.feedMode) {
-            "firstParty" -> "Announcements straight from OpenAI, Anthropic, Google… (aihot.news › 精选 › 只看一手), about 8 a day."
-            "selected" -> "AIHOT's editors' picks, about 15–25 a day: official news plus the best coverage."
+            "firstParty" -> "Only official announcements from OpenAI, Anthropic, Google… (aihot.news › Selected › First-hand), about 8–10 a day."
+            "selected" -> "Everything in aihot.news › Selected, all categories: official news plus the best coverage, about 10–25 a day."
             else -> "Every AI story, hundreds a day. Use keywords or a higher score below."
         })
         // First-hand items all score 60+, so the score filter only means something for the wider feeds.
@@ -155,7 +155,7 @@ private fun AlertsSection(ctx: Context, s: Settings) {
         Hint("Comma-separated. Also matches AIHOT tags such as Anthropic, Agent, Coding, Model release, Safety.")
     }
     Group("Follow topics") {
-        Hint("Also alert me about curated stories on these topics — not just first-hand announcements. Matches AIHOT's own topic tags.")
+        Hint("Stories on these topics are always alerted (handy with Selected · First-hand), and listed under Selected › ★ Following. Matches AIHOT's own topic tags.")
         val followed = s.followed()
         com.aliahad.ainewshot.Topics.all.groupBy { it.group }.forEach { (group, topics) ->
             Text(group, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

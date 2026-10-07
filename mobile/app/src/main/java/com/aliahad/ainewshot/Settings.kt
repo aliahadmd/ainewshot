@@ -27,7 +27,7 @@ class Settings private constructor(ctx: Context) {
     // Alerts
     var liveAlerts by bool("liveAlerts", true)
     var pollSeconds by int("pollSeconds", 90)
-    var feedMode by str("feedMode", "firstParty")          // firstParty | selected | all
+    var feedMode by str("feedMode", "selected")            // selected (精选 › 全部) | firstParty (精选 › 一手) | all (全部动态)
     var minScore by int("minScore", 0)
     // Selected tab: last view (selected | all) and chip (all | firstParty | category id | following), as on aihot.news.
     var feedView by str("feedView", "selected")

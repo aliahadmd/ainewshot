@@ -384,7 +384,7 @@ fun CatchUpScreen(onBack: () -> Unit) {
         }
         LazyColumn {
             item {
-                Text(if (unread.isEmpty()) "You're all caught up." else "${unread.size} first-hand stories you haven't opened, newest first.",
+                Text(if (unread.isEmpty()) "You're all caught up." else "${unread.size} stories you haven't opened, newest first.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
             }
             items(unread, key = { it.id }) { NewsCard(it, unread = true) { nav.open(it) } }
