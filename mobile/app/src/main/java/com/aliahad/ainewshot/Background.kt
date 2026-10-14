@@ -29,6 +29,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         Alerts.createChannels(this)
+        Cloud.attach(this)
         NewsRepo.load(this)
         PodcastStudio.load(this)
         PollWorker.schedule(this)

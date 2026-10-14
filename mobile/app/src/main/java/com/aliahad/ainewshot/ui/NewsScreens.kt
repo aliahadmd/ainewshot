@@ -207,7 +207,21 @@ fun SetupBanner(onSetup: () -> Unit) {
         val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumed++ }
         owner.lifecycle.addObserver(o); onDispose { owner.lifecycle.removeObserver(o) }
     }
-    val missing = remember(resumed) { Setup.missingCritical(ctx) }
+    val account by com.aliahad.ainewshot.Cloud.account.collectAsState()
+    if (account == null) {
+        // Signed out: the feed still updates, but in Chinese and without the natural voice.
+        Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .clickable { ctx.startActivity(android.content.Intent(ctx, com.aliahad.ainewshot.LoginActivity::class.java)) },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Sign in with your email to read everything in English and hear it read aloud.", Modifier.weight(1f).padding(end = 8.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                TextButton(onClick = { ctx.startActivity(android.content.Intent(ctx, com.aliahad.ainewshot.LoginActivity::class.java)) }) { Text("Sign in") }
+            }
+        }
+        return
+    }
+    val missing = remember(resumed, account) { Setup.missingCritical(ctx) }
     val gaps = NewsRepo.status.collectAsState().value.interruptions.count { it > System.currentTimeMillis() - 86_400_000 }
     if (missing.isEmpty() && gaps == 0) return
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onSetup),
@@ -234,7 +248,7 @@ fun ArticleScreen(id: String, seed: NewsItem?, onBack: () -> Unit) {
     var failed by remember(id) { mutableStateOf<String?>(null) }
     var head by remember(id) { mutableStateOf(seed) }
     var zh by remember(id) { mutableStateOf<String?>(null) }
-    var job by remember(id) { mutableStateOf<kotlinx.coroutines.flow.StateFlow<List<String?>>?>(null) }
+    var job by remember(id) { mutableStateOf<kotlinx.coroutines.flow.StateFlow<List<Articles.Piece>>?>(null) }
     var cachedEn by remember(id) { mutableStateOf<String?>(null) }
     var showZh by rememberSaveable(id) { mutableStateOf(false) }
     var storyTitle by remember(id) { mutableStateOf<String?>(null) }
@@ -252,7 +266,10 @@ fun ArticleScreen(id: String, seed: NewsItem?, onBack: () -> Unit) {
         val a = runCatching { Site.article(id) }.getOrElse { failed = it.message; null } ?: return@LaunchedEffect
         art = a
         val h = head
-        head = if (h == null || h.summary.isBlank()) NewsItem.from(a.item, Browse.rendered(ctx, listOf(a.item))[id])
+        // No header yet, or one saved while translation was unavailable: translate it now.
+        val untranslated = h != null && h.spoken == null && !Translator.isLatin(h.summary)
+        head = if (h == null || h.summary.isBlank() || untranslated) NewsItem.from(a.item, Browse.rendered(ctx, listOf(a.item))[id]).let {
+            if (h != null) it.copy(firstParty = h.firstParty, topics = h.topics, alerted = h.alerted) else it }
         else h.copy(eventKey = h.eventKey ?: a.item.factId, extraSources = maxOf(h.extraSources, a.item.extraSources),
             reportCount = maxOf(h.reportCount, a.item.reportCount), originalUrl = h.originalUrl ?: a.item.originalUrl, score = h.score ?: a.item.score, quoteText = h.quoteText ?: a.item.quoteText,
             quoteAuthor = h.quoteAuthor ?: a.item.quoteAuthor, originalTitle = h.originalTitle ?: a.item.originalTitle,
@@ -266,14 +283,14 @@ fun ArticleScreen(id: String, seed: NewsItem?, onBack: () -> Unit) {
         zh = md
         Articles.cached(ctx, id)?.let { cachedEn = it; return@LaunchedEffect }
         val s = Settings.get(ctx)
-        if (s.translation != "deepseek" || s.deepseekKey.isBlank()) { showZh = true; return@LaunchedEffect }
+        if (!Translator.on(s)) { showZh = true; return@LaunchedEffect }
         job = Articles.translate(ctx, id, md)
     }
     val pieces = job?.collectAsState()?.value ?: emptyList()
 
     // Pieces land in any order; show everything up to the first one still being translated.
-    val enText: String? = cachedEn ?: pieces.takeWhile { it != null }.joinToString("\n\n").takeIf { it.isNotBlank() }
-    val translating = cachedEn == null && zh != null && !showZh && (pieces.isEmpty() || pieces.any { it == null })
+    val enText: String? = cachedEn ?: Articles.visible(pieces).takeIf { it.isNotBlank() }
+    val translating = cachedEn == null && zh != null && !showZh && (pieces.isEmpty() || pieces.any { !it.done })
     val body = if (showZh) zh else enText
     val blocks = remember(body) { body?.let { mdBlocks(it) } ?: emptyList() }
     val item = head
@@ -285,7 +302,8 @@ fun ArticleScreen(id: String, seed: NewsItem?, onBack: () -> Unit) {
             if (item != null) TextButton(enabled = !explaining, onClick = {
                 explaining = true
                 scope.launch {
-                    explain = runCatching { Translator.explain(item, Settings.get(ctx)) }.getOrElse { "Couldn't explain: ${it.message}" }
+                    list.animateScrollToItem(0)
+                    explain = runCatching { Translator.explain(item, Settings.get(ctx)) { so -> explain = so } }.getOrElse { "Couldn't explain: ${it.message}" }
                     explaining = false
                     list.animateScrollToItem(0)
                 }
@@ -359,7 +377,7 @@ fun ArticleScreen(id: String, seed: NewsItem?, onBack: () -> Unit) {
             if (translating) item {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.size(10.dp))
-                    Text(if (pieces.isEmpty()) "Translating the full text…" else "Translating… ${pieces.count { it != null }} of ${pieces.size} parts",
+                    Text(if (pieces.isEmpty()) "Translating the full text…" else "Translating… ${pieces.count { it.done }} of ${pieces.size} parts done",
                         style = MaterialTheme.typography.bodySmall)
                 }
             }

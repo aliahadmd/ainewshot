@@ -39,19 +39,21 @@ object Net {
         }
     }
 
-    private fun open(url: String, key: String, timeoutMs: Int): HttpURLConnection =
+    /** POST with [headers]. Redirects are not followed: for the private backend a redirect means "sign in again". */
+    private fun open(url: String, headers: Map<String, String>, timeoutMs: Int): HttpURLConnection =
         (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
+            instanceFollowRedirects = false
             connectTimeout = 20_000
             readTimeout = timeoutMs
-            setRequestProperty("Authorization", "Bearer $key")
+            headers.forEach { (k, v) -> setRequestProperty(k, v) }
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("User-Agent", UA)
         }
 
-    suspend fun postJson(url: String, key: String, body: JSONObject, timeoutMs: Int = 180_000): JSONObject = withContext(Dispatchers.IO) {
-        val c = open(url, key, timeoutMs)
+    suspend fun postJson(url: String, headers: Map<String, String>, body: JSONObject, timeoutMs: Int = 180_000): JSONObject = withContext(Dispatchers.IO) {
+        val c = open(url, headers, timeoutMs)
         try {
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = c.responseCode
@@ -63,9 +65,9 @@ object Net {
     }
 
     /** POST and hand every Server-Sent-Events `data:` payload to [onData]. */
-    suspend fun postStream(url: String, key: String, body: JSONObject, timeoutMs: Int = 120_000, onData: (String) -> Unit) =
+    suspend fun postStream(url: String, headers: Map<String, String>, body: JSONObject, timeoutMs: Int = 120_000, onData: (String) -> Unit) =
         withContext(Dispatchers.IO) {
-            val c = open(url, key, timeoutMs)
+            val c = open(url, headers, timeoutMs)
             try {
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 val code = c.responseCode

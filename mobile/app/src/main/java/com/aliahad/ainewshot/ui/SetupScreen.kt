@@ -61,6 +61,10 @@ object Setup {
     fun items(ctx: Context): List<SetupItem> {
         val s = Settings.get(ctx)
         val list = mutableListOf(
+            SetupItem("signin", "Signed in to your AI backend", "Sign in once with your email: English translation, full articles, podcasts and the natural voice run on your private Cloudflare Worker.",
+                com.aliahad.ainewshot.Cloud.signedIn(), true) {
+                it.startActivity(android.content.Intent(it, com.aliahad.ainewshot.LoginActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            },
             SetupItem("notify", "Notifications allowed", "Without this nothing can reach you.", HyperOS.notificationsEnabled(ctx) && Alerts.canNotify(ctx), true) {
                 HyperOS.channelSettings(it, Alerts.CH_ALERTS)
             },

@@ -26,21 +26,28 @@ object Articles {
 
     fun clear(ctx: Context) { dir(ctx).listFiles()?.forEach { it.delete() } }
 
-    private val inflight = java.util.concurrent.ConcurrentHashMap<String, MutableStateFlow<List<String?>>>()
+    /** One piece of an article being translated: text so far (null = not started) and whether it's finished. */
+    data class Piece(val text: String?, val done: Boolean)
 
-    /**
-     * Translate [md] in the background (keeps going if you leave the article) and cache it.
-     * The flow holds one slot per piece: null until that piece is translated.
-     */
-    fun translate(ctx: Context, id: String, md: String): StateFlow<List<String?>> = inflight.getOrPut(id) {
-        val flow = MutableStateFlow<List<String?>>(emptyList())
+    private val inflight = java.util.concurrent.ConcurrentHashMap<String, MutableStateFlow<List<Piece>>>()
+
+    /** What to show: every finished piece, plus the one being written now (later pieces wait, so text never jumps). */
+    fun visible(parts: List<Piece>): String {
+        val out = mutableListOf<String>()
+        for (p in parts) { p.text?.let { out += it }; if (!p.done) break }
+        return out.joinToString("\n\n")
+    }
+
+    /** Translate [md] in the background (keeps going if you leave the article), streaming each piece, then cache it. */
+    fun translate(ctx: Context, id: String, md: String): StateFlow<List<Piece>> = inflight.getOrPut(id) {
+        val flow = MutableStateFlow<List<Piece>>(emptyList())
         NewsRepo.appScope.launch {
             try {
-                val parts = Translator.article(md, Settings.get(ctx), onCount = { n -> flow.value = List(n) { null } }) { i, t ->
-                    flow.update { l -> if (i < l.size) l.toMutableList().also { it[i] = t } else l }
+                val parts = Translator.article(md, Settings.get(ctx), onCount = { n -> flow.value = List(n) { Piece(null, false) } }) { i, t, done ->
+                    flow.update { l -> if (i < l.size) l.toMutableList().also { it[i] = Piece(t, done) } else l }
                 }
                 store(ctx, id, parts.joinToString("\n\n"))
-                flow.value = parts
+                flow.value = parts.map { Piece(it, true) }
             } finally { inflight.remove(id) }
         }
         flow

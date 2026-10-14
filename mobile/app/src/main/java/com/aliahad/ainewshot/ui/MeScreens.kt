@@ -97,7 +97,7 @@ fun MeScreen() {
             item { MeRow(AppIcons.Info, "AIHOT", "Where all news comes from · aihot.news") { ctx.openUrl(AIHot.BASE) } }
             item { MeRow(AppIcons.Rules, "Usage rules", "AIHOT's terms for personal readers") { ctx.openUrl("${AIHot.BASE}/terms") } }
             item {
-                Text("AI News Hot ${BuildConfig.VERSION_NAME} · translation by DeepSeek · voices by Xiaomi MiMo",
+                Text("AI News Hot ${BuildConfig.VERSION_NAME} · AI by Cloudflare Workers AI · voices by Xiaomi MiMo",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
             }
         }

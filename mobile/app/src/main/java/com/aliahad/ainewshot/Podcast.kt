@@ -158,8 +158,7 @@ object PodcastStudio {
 
     private suspend fun run(ctx: Context, days: Int): Episode {
         val s = Settings.get(ctx)
-        if (s.deepseekKey.isBlank()) throw HttpError(401, "Add a DeepSeek API key in Settings.")
-        if (s.mimoKey.isBlank()) throw HttpError(401, "Add a MiMo API key in Settings.")
+        if (!Cloud.signedIn()) throw HttpError(401, "Sign in first (Me › Settings › Account).")
         val minutes = if (s.podLengthMin > 0) s.podLengthMin else mapOf(1 to 8, 3 to 12, 7 to 18)[days] ?: 10
         val since = System.currentTimeMillis() - days * 86_400_000L
 
@@ -173,7 +172,7 @@ object PodcastStudio {
 
         // 2. Edit
         set(2, "Merging duplicate coverage across ${items.size} items…")
-        val flash = DeepSeek(s.deepseekKey, "deepseek-flash")
+        val flash = Llm()
         var stories = Editor.edit(items, flash) { d, t -> detail("Edited $d of $t batches", d.toFloat() / t) }
         if (stories.size > 60 || items.size > 300) {
             detail("Removing duplicates across batches…")
@@ -184,7 +183,7 @@ object PodcastStudio {
 
         // 3. Write
         set(3, "Writing a $minutes-minute ${if (s.podFormat == "duo") "two-host" else "solo"} script…")
-        var script = Writer.write(plan, items, days, since, minutes, s, DeepSeek(s.deepseekKey, s.podWriterModel))
+        var script = Writer.write(plan, items, days, since, minutes, s, Llm())
         if (s.podJingle) script = script.copy(lines = listOf(PodLine(-1, "J", "jingle",
             "(singing) A I News Hot, every story that you missed, A I News Hot, here's your morning list!", 0)) + script.lines)
         val lines = script.lines.mapIndexed { i, l -> l.copy(id = i) }
@@ -241,7 +240,7 @@ data class Plan(
 )
 
 object Editor {
-    suspend fun edit(items: List<ApiItem>, ds: DeepSeek, progress: (Int, Int) -> Unit): List<EditedStory> = coroutineScope {
+    suspend fun edit(items: List<ApiItem>, ds: Llm, progress: (Int, Int) -> Unit): List<EditedStory> = coroutineScope {
         val system = """
             You are the news editor of an AI-industry podcast. Below is one batch of raw news items (mostly Chinese), one per line:
             index|score|★ if editor-picked|category|source|title|summary
@@ -285,7 +284,7 @@ object Editor {
         results
     }
 
-    suspend fun merge(stories: List<EditedStory>, ds: DeepSeek): List<EditedStory> {
+    suspend fun merge(stories: List<EditedStory>, ds: Llm): List<EditedStory> {
         val list = stories.mapIndexed { k, s -> "$k|${s.imp}|${s.ids.size}|${s.t}" }.joinToString("\n")
         val system = """
             These are story headlines from several editors (key|importance|sources|headline). Many describe the same event.
@@ -348,7 +347,7 @@ object Editor {
 data class Script(val title: String, val summary: String, val chapters: List<Chapter>, val lines: List<PodLine>)
 
 object Writer {
-    suspend fun write(plan: Plan, items: List<ApiItem>, days: Int, since: Long, minutes: Int, s: Settings, ds: DeepSeek): Script {
+    suspend fun write(plan: Plan, items: List<ApiItem>, days: Int, since: Long, minutes: Int, s: Settings, ds: Llm): Script {
         val duo = s.podFormat == "duo"
         val words = minutes * 145            // measured: MiMo voices + gaps ≈ 145 spoken words per minute
         val lineTarget = words / 22          // LLMs follow a line count far better than a word count
@@ -488,7 +487,7 @@ object Recorder {
                         val buf = java.io.ByteArrayOutputStream()
                         parts.forEachIndexed { i, p ->
                             if (i > 0) buf.write(ByteArray((0.12 * MiMo.RATE).toInt() * 2))
-                            buf.write(MiMo.checkedPcm(ctx, p, style(l), voice, s.mimoKey))
+                            buf.write(MiMo.checkedPcm(ctx, p, style(l), voice))
                         }
                         buf.toByteArray()
                     } catch (e: kotlinx.coroutines.CancellationException) {

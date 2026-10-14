@@ -12,7 +12,7 @@ Requires Android 10 or later. It's tested on a Redmi K80 Pro running HyperOS 4 /
 2. Open the APK and allow your browser or file manager to install unknown apps. HyperOS may run a security scan first; choose **Install anyway**.
 3. Open **AI News Hot**, allow notifications, then go to **Me › Reliability setup**. Tap **Fix** on every row until it shows ✓, then use **Send test alert in 20 s** and lock the phone to confirm the alert wakes the screen and speaks.
 
-The APK includes default DeepSeek and MiMo API keys, so it works right away. You can change them in **Me › Settings › API keys**.
+There are **no API keys** in the app. Open it and tap **Sign in**: enter your email, type the code Cloudflare emails you, and you're done for a month. Translation runs on **Cloudflare Workers AI** (gpt-oss-20b) and the voice on Xiaomi MiMo, both through your private Worker ([`cloud/`](cloud/README.md)), which is protected by Cloudflare Access.
 
 To update, install a newer APK over the old one; your settings and episodes are kept.
 
@@ -57,11 +57,11 @@ The app-op numbers were decoded from the phone's own `miui-framework.jar` (`com.
 | **One alert per event** | AIHOT's event groups (`factId`) plus a headline-similarity check: the same launch reported by several outlets produces one alert. |
 | **Corrections & retractions** | Official `selected/snapshot` + `selected/changes` sync: corrected stories are updated and re-translated, and stories AIHOT withdraws leave the feed, held alerts and the popup (as AIHOT's terms §7 require). |
 | **Never miss, never repeat** | Unread dots and a "What did I miss" screen with a spoken rundown and Mark all read. **Search** the last 7 days of all news (English queries also search the Chinese). Story **follow-ups** alert you when a story you opened develops. The always-on notification shows the latest headline. A **home-screen widget** shows the newest headlines and your unread count. |
-| **English everywhere** | DeepSeek (`deepseek-flash`, thinking off) translates and summarizes in batches, and writes a short spoken version of each story. If it's unavailable, the app shows the source's own English headline. |
+| **English everywhere** | gpt-oss-20b on Cloudflare Workers AI translates and summarizes in batches; full articles and Explain stream in as they're written, and writes a short spoken version of each story. If it's unavailable, the app shows the source's own English headline. |
 | **Forced popup** | With *Display over other apps* allowed, a full-screen alert card opens over whatever app you're in. On the lock screen it wakes the display. Taps are ignored for the first 0.8 s so you can't hit a button by accident. Three or more stories arrive as one digest with a spoken rundown. |
 | **Voice** | Xiaomi MiMo TTS clips are generated *before* the popup appears, so the voice starts instantly. Tapping **Listen** on any other story *streams* MiMo audio straight into an AudioTrack, so speech starts in about 3 s; recent stories are also pre-recorded on Wi-Fi. Speech plays on the media stream, so your volume buttons control it, and it pauses the podcast. Each take is checked against its expected length and re-recorded if MiMo runs on. Other audio ducks while it speaks. It stays silent during calls and while a podcast is playing. The phone's own voice is the fallback. |
 | **Respectful** | Quiet hours, a popups-per-hour cap, "In 30 min" snooze, *always* and *never* keywords (they also match AIHOT tags such as Anthropic, Agent, Coding), and no alerts for items older than 12 h. |
-| **AI podcast** | Choose **1 / 3 / 7 days**, then: collect *all* news (about 450 items a day) → editor merges duplicates and ranks stories (lenient) → plan deep dives, briefs and quick hits, with **every** story in the show notes → writer (DeepSeek V4 Pro) → MiMo records each line → loudness matching → AAC. One or two hosts, plus tone, emotion level, sung jingle, and custom voices (VoiceDesign once, then VoiceClone). Plays through Media3 with lock-screen and Bluetooth controls and 0.8–2× speed. Episodes are saved to **Music/AI News Hot**. It can also prepare a morning episode automatically. |
+| **AI podcast** | Choose **1 / 3 / 7 days**, then: collect *all* news (about 450 items a day) → editor merges duplicates and ranks stories (lenient) → plan deep dives, briefs and quick hits, with **every** story in the show notes → writer (gpt-oss-20b on Workers AI) → MiMo records each line → loudness matching → AAC. One or two hosts, plus tone, emotion level, sung jingle, and custom voices (VoiceDesign once, then VoiceClone). Plays through Media3 with lock-screen and Bluetooth controls and 0.8–2× speed. Episodes are saved to **Music/AI News Hot**. It can also prepare a morning episode automatically. |
 | **Explain** | A short developer-focused brief on any story: what happened, why it matters, what you could do, and open questions. |
 
 ### MiMo style control used by the podcast
@@ -79,7 +79,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
 
 - **Version:** taken from `VERSION` (versionCode = major·10000 + minor·100 + patch).
-- **API keys:** default keys are read from `Resources/secrets.json` at build time.
+- **No API keys in the app:** AI and voice go through the Cloudflare Worker in [`cloud/`](cloud/README.md); you sign in with Cloudflare Access (email one-time PIN). The MiMo key is a Worker secret.
 - **Signing:** every build is signed with the project's own key in `mobile/signing/` (see *Signing* below).
 
 **Debug builds only:** trigger alerts, a podcast, or playback from the computer:
@@ -116,7 +116,8 @@ gh release create v2.2.0 build/AINewsHot-2.2.0.apk --title "AI News Hot 2.2.0 (A
 mobile/                 Android app (Kotlin, Jetpack Compose) — the maintained product
   app/src/main/java/com/aliahad/ainewshot/
     AIHot.kt            aihot.news client (first-hand timeline + official v1 API)
-    AI.kt               DeepSeek translation/explain, MiMo TTS + run-on guard
+    AI.kt               translation/explain prompts (Workers AI), MiMo TTS + run-on guard
+    Cloud.kt            sign-in (Cloudflare Access) and the private Worker client
     NewsRepo.kt         polling, filtering, holds, routing
     Alerts.kt           notifications, forced popup, speaker
     AlertActivity.kt    the full-screen alert card
@@ -125,7 +126,7 @@ mobile/                 Android app (Kotlin, Jetpack Compose) — the maintained
     PodcastPlayback.kt  production service + Media3 playback
     ui/                 Compose screens (News, Podcast, Reports, Settings)
 macos/                  deprecated macOS menu-bar app (Swift)
-Resources/secrets.json  default API keys bundled into builds
+cloud/                  Cloudflare Worker: Workers AI + MiMo proxy behind Cloudflare Access
 VERSION                 app version
 ```
 

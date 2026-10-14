@@ -27,6 +27,8 @@
             </intent-filter>
         </activity>
 
+        <!-- Cloudflare Access sign-in (WebView, email one-time PIN) -->
+        <activity android:name=".LoginActivity" android:exported="false" android:label="Sign in" />
         <activity
             android:name=".AlertActivity"
             android:exported="false"

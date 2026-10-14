@@ -1,4 +1,3 @@
-import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
@@ -6,9 +5,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Default API keys are shared with the macOS app (../Resources/secrets.json) and seeded on first launch.
-val secretsFile = rootProject.file("../Resources/secrets.json")
-val secrets: Map<*, *> = if (secretsFile.exists()) JsonSlurper().parse(secretsFile) as Map<*, *> else emptyMap<String, String>()
+// No API keys are built into the app: AI and voice go through the private Cloudflare Worker (../cloud),
+// which you reach by signing in with Cloudflare Access.
 val appVersion = rootProject.file("../VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "1.0.0"
 
 // Dedicated signing key (mobile/signing). Published APKs additionally carry a rotation lineage from the old
@@ -30,8 +28,6 @@ android {
         // 2.0.0 -> 20000: monotonic, so newer APKs always install over older ones.
         versionCode = appVersion.split(".").map { it.toIntOrNull() ?: 0 }.let { (it + listOf(0, 0, 0)).take(3) }.let { it[0] * 10000 + it[1] * 100 + it[2] }
         versionName = appVersion
-        buildConfigField("String", "DEEPSEEK_KEY", "\"${secrets["deepseekKey"] ?: ""}\"")
-        buildConfigField("String", "MIMO_KEY", "\"${secrets["mimoKey"] ?: ""}\"")
     }
 
     signingConfigs {

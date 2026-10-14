@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -52,7 +53,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.aliahad.ainewshot.Browse
 import com.aliahad.ainewshot.BuildConfig
-import com.aliahad.ainewshot.KeyCheck
 import com.aliahad.ainewshot.LiveService
 import com.aliahad.ainewshot.MiMo
 import com.aliahad.ainewshot.NewsItem
@@ -92,15 +92,15 @@ fun SettingsScreen(onSetup: () -> Unit, onBack: (() -> Unit)? = null) {
             // Reading `v` makes switches/choices reflect saved values immediately; text fields keep their own state.
             if (v < 0) Text("")
             ReliabilitySection(onSetup, resumed)
+            AccountSection(ctx)
             AlertsSection(ctx, s)
             BriefingsSection(ctx, s)
             VoiceSection(ctx, s)
             LanguageSection(s)
             PodcastSection(ctx, s)
-            KeysSection(ctx, s)
             StorageSection(ctx)
             SectionTitle("About")
-            Text("AI News Hot ${BuildConfig.VERSION_NAME} · news from aihot.news · translation by DeepSeek · voices by Xiaomi MiMo",
+            Text("AI News Hot ${BuildConfig.VERSION_NAME} · news from aihot.news · AI by Cloudflare Workers AI (gpt-oss-20b) · voices by Xiaomi MiMo",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -241,9 +241,10 @@ private fun LanguageSection(s: Settings) {
     s.observe()
     SectionTitle("Language & AI")
     Group("Translate Chinese news with") {
-        ChoiceRow(null, listOf("deepseek" to "DeepSeek AI", "original" to "No translation"), s.translation) { s.translation = it }
-        Hint(if (s.translation == "deepseek") "English titles, summaries and spoken versions." else "Shows the source's own English title when there is one; summaries stay in Chinese.")
-        if (s.translation == "deepseek") ChoiceRow("Model", listOf("deepseek-flash" to "Flash (fast, recommended)", "deepseek-v4-pro" to "V4 Pro"), s.deepseekModel) { s.deepseekModel = it }
+        val mode = if (s.translation == "original") "original" else "ai"
+        ChoiceRow(null, listOf("ai" to "AI (gpt-oss on Cloudflare)", "original" to "No translation"), mode) { s.translation = it }
+        Hint(if (mode == "ai") "English titles, summaries, full articles and spoken versions. Needs you signed in (Account above)."
+            else "Shows the source's own English title when there is one; summaries stay in Chinese.")
     }
     Field("About me", s.interestProfile, "", lines = 3) { s.interestProfile = it }
     Hint("Used to personalise Explain and the “for you” score.")
@@ -274,7 +275,6 @@ private fun PodcastSection(ctx: Context, s: Settings) {
         ChoiceRow("Tone", PodStyle.tones.map { it.first to it.second }, s.podTone) { s.podTone = it }
         ChoiceRow("Emotion", listOf(1 to "Subtle", 2 to "Natural", 3 to "Expressive"), s.podExpressiveness) { s.podExpressiveness = it }
         Toggle("Sung intro jingle", "MiMo singing mode.", s.podJingle) { s.podJingle = it }
-        ChoiceRow("Script writer", listOf("deepseek-v4-pro" to "V4 Pro (best)", "deepseek-flash" to "Flash (faster)"), s.podWriterModel) { s.podWriterModel = it }
     }
     Group(if (s.podFormat == "duo") "Host A" else "Host") {
         Field("Name", s.podHostAName, "") { s.podHostAName = it }
@@ -305,7 +305,7 @@ private fun PodcastSection(ctx: Context, s: Settings) {
         FilledTonalButton(enabled = !busy, onClick = {
             busy = true; status = "Designing…"
             scope.launch {
-                status = runCatching { "Created " + MiMo.design(ctx, designName, designPrompt, s.mimoKey) + " — pick it as a voice above." }
+                status = runCatching { "Created " + MiMo.design(ctx, designName, designPrompt) + " — pick it as a voice above." }
                     .getOrElse { "Failed: ${it.message}" }
                 busy = false; s.version.value++
             }
@@ -328,22 +328,32 @@ private fun PodcastSection(ctx: Context, s: Settings) {
     }
 }
 
+/** Your Cloudflare sign-in: it unlocks translation and the natural voice. No API keys anywhere in the app. */
 @Composable
-private fun KeysSection(ctx: Context, s: Settings) {
-    s.observe()
+private fun AccountSection(ctx: Context) {
     val scope = rememberCoroutineScope()
-    var ds by remember { mutableStateOf("") }
-    var mm by remember { mutableStateOf("") }
-    SectionTitle("API keys")
-    Secret("DeepSeek API key", s.deepseekKey) { s.deepseekKey = it }
-    if (ds.isNotEmpty()) Hint("DeepSeek: $ds")
-    Secret("Xiaomi MiMo API key", s.mimoKey) { s.mimoKey = it }
-    if (mm.isNotEmpty()) Hint("MiMo: $mm")
-    OutlinedButton(onClick = {
-        ds = "testing…"; mm = "testing…"
-        scope.launch { ds = KeyCheck.deepseek(s.deepseekKey) }
-        scope.launch { mm = KeyCheck.mimo(ctx, s.mimoKey) }
-    }) { Text("Test keys") }
+    val account by com.aliahad.ainewshot.Cloud.account.collectAsState()
+    var test by remember { mutableStateOf("") }
+    SectionTitle("Account")
+    Group(if (account != null) "Signed in" else "Not signed in") {
+        val a = account
+        if (a != null) {
+            Text(a.email, style = MaterialTheme.typography.bodyLarge)
+            Hint("Session lasts until " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(a.expires)) +
+                ". Translation runs on Cloudflare Workers AI and voices on MiMo, through your private Worker.")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    test = "Testing…"
+                    scope.launch { val (ai, voice) = com.aliahad.ainewshot.Cloud.test(ctx); test = "AI: $ai · Voice: $voice" }
+                }) { Text("Test") }
+                TextButton(onClick = { com.aliahad.ainewshot.Cloud.signOut(); test = "" }) { Text("Sign out") }
+            }
+            if (test.isNotEmpty()) Hint(test)
+        } else {
+            Hint("Sign in with your email (Cloudflare sends a one-time code) to turn on English translation, full articles, Explain, podcasts and the natural voice.")
+            Button(onClick = { ctx.startActivity(android.content.Intent(ctx, com.aliahad.ainewshot.LoginActivity::class.java)) }) { Text("Sign in") }
+        }
+    }
 }
 
 @Composable

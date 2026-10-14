@@ -79,11 +79,11 @@ object Speaker {
     /** Render (or reuse) a validated MiMo clip. Used for alerts and Wi-Fi prefetch. */
     suspend fun prepare(ctx: Context, item: NewsItem): File? {
         val s = Settings.get(ctx)
-        if (s.voiceProvider != "mimo" || s.mimoKey.isBlank()) return null
+        if (s.voiceProvider != "mimo" || !Cloud.signedIn()) return null
         val f = cacheFile(ctx, item.speechText, s)
         if (f.exists()) return f
         return runCatching {
-            val pcm = MiMo.checkedPcm(ctx, item.speechText, s.voiceStyle, s.voice, s.mimoKey)
+            val pcm = MiMo.checkedPcm(ctx, item.speechText, s.voiceStyle, s.voice)
             f.writeBytes(MiMo.wav(pcm)); f
         }.onSuccess { mimoFailures.value = 0 }
             .onFailure { Log.w(TAG, "TTS failed", it); mimoFailures.value++; mimoLastError.value = it.message }.getOrNull()
@@ -93,7 +93,7 @@ object Speaker {
     fun prefetch(ctx: Context, items: List<NewsItem>) {
         val app = ctx.applicationContext
         val s = Settings.get(app)
-        if (prefetchJob?.isActive == true || s.voiceProvider != "mimo" || s.mimoKey.isBlank()) return
+        if (prefetchJob?.isActive == true || s.voiceProvider != "mimo" || !Cloud.signedIn()) return
         val cm = app.getSystemService(ConnectivityManager::class.java)
         if (cm.isActiveNetworkMetered) return
         val todo = items.filter { !isCached(app, it) }
@@ -141,7 +141,7 @@ object Speaker {
             try {
                 when {
                     cached != null -> playFile(app, cached)
-                    s.voiceProvider == "mimo" && s.mimoKey.isNotBlank() -> if (!stream(app, item, s)) speakSystem(app, item)
+                    s.voiceProvider == "mimo" && Cloud.signedIn() -> if (!stream(app, item, s)) speakSystem(app, item)
                     else -> speakSystem(app, item)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -189,7 +189,7 @@ object Speaker {
             coroutineScope {
                 val net = launch {
                     try {
-                        MiMo.pcm(ctx, text, s.voiceStyle, s.voice, s.mimoKey) { chunk ->
+                        MiMo.pcm(ctx, text, s.voiceStyle, s.voice) { chunk ->
                             if (!started) { started = true; preparingId.value = null; t.play(); first.complete(Unit) }
                             all.write(chunk)
                             if (written < maxBytes) {

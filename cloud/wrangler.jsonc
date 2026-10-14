@@ -1,0 +1,32 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	// AI News Hot's private backend: translation/summaries (Workers AI) and the MiMo voice proxy.
+	// Protected by Cloudflare Access (one-click on workers.dev); the Worker re-validates the Access JWT.
+	"name": "ainewshot-ai",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-13",
+	"workers_dev": true,
+	"preview_urls": false,
+	"upload_source_maps": true,
+	"ai": { "binding": "AI" },
+	"ratelimits": [
+		// Per signed-in user: a backstop against a runaway loop burning AI credits.
+		{ "name": "LIMITER", "namespace_id": "4201", "simple": { "limit": 240, "period": 60 } }
+	],
+	"vars": {
+		// gpt-oss-20b: ~130 tokens/s and ~$0.0005 per article piece on this workload (benchmarked against Qwen 3.8 27B,
+		// DeepSeek V4 Flash, Qwen3-30B, GLM 4.7 Flash, Gemma 4 and others).
+		"MODEL": "@cf/openai/gpt-oss-20b",
+		// Filled in from the Access application (see README): team domain and the application's AUD tag.
+		"TEAM_DOMAIN": "https://aliahad.cloudflareaccess.com",
+		"POLICY_AUD": "55d75b71daef505cff654e202bed9567de23ac3eefdabe36768fd2caca42294e",
+		// Extra check on top of the Access policy (comma-separated).
+		"ALLOWED_EMAILS": "aliahadmd1@gmail.com"
+	},
+	// MIMO_KEY is a secret: `wrangler secret put MIMO_KEY`.
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1,
+		"traces": { "enabled": true }
+	}
+}

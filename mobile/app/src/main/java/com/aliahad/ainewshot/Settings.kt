@@ -57,8 +57,7 @@ class Settings private constructor(ctx: Context) {
     var quietEnd by int("quietEnd", 7 * 60)
 
     // Translation
-    var translation by str("translation", "deepseek")     // deepseek | original
-    var deepseekModel by str("deepseekModel", "deepseek-flash")
+    var translation by str("translation", "ai")           // ai (Workers AI) | original; older "deepseek" means ai
     var interestProfile by str("interestProfile", "I build apps with AI. I care about frontier model releases (Claude, GPT, Gemini, DeepSeek, Qwen), coding agents and developer tools, open-weight models, and major AI industry moves.")
 
     // Audio
@@ -81,7 +80,6 @@ class Settings private constructor(ctx: Context) {
     var podHostBVoice by str("podHostBVoice", "Dean")
     var podHostBPersona by str("podHostBPersona", "Co-host and analyst. A calm, dry-witted man in his forties; an ex-engineer who adds the 'so what' for builders, asks sharp questions and is healthily sceptical of hype. Lower, relaxed voice.")
     var podJingle by bool("podJingle", false)
-    var podWriterModel by str("podWriterModel", "deepseek-v4-pro")
     var podAuto by bool("podAuto", false)
     var podAutoMinutes by int("podAutoMinutes", 7 * 60)
     var podAutoWeeklyOnMonday by bool("podAutoWeeklyOnMonday", true)
@@ -89,8 +87,6 @@ class Settings private constructor(ctx: Context) {
     var podSpeed by str("podSpeed", "1.0")
 
     // Keys (seeded from the build on first launch)
-    var deepseekKey by str("deepseekKey", BuildConfig.DEEPSEEK_KEY)
-    var mimoKey by str("mimoKey", BuildConfig.MIMO_KEY)
 
     /** Checklist items the app can't read from the system; you confirm them once in Reliability setup. */
     fun confirmed(key: String): Boolean? = if (p.getBoolean("confirmed_$key", false)) true else null

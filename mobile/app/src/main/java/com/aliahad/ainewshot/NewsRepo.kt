@@ -162,6 +162,7 @@ object NewsRepo {
             runCatching { checkTrending(ctx) }.onFailure { Log.w(TAG, "trending alerts", it) }
             runCatching { syncChanges(ctx) }.onFailure { Log.w(TAG, "sync", it) }
             runCatching { checkStoryUpdates(ctx) }.onFailure { Log.w(TAG, "story updates", it) }
+            runCatching { retranslate(ctx) }.onFailure { Log.w(TAG, "retranslate", it) }
             runCatching { maybeBriefing(ctx) }.onFailure { Log.w(TAG, "briefing", it) }
             flushPending(ctx)
             maybeMorningPodcast(ctx)
@@ -512,6 +513,29 @@ object NewsRepo {
     fun unfollowStory(ctx: Context, storyId: String) { followedStories.value = followedStories.value - storyId; persist(ctx) }
 
     /** Every ~10 min, ask AIHOT (conditional GET, usually a 304) whether followed stories moved on. */
+    /**
+     * Stories that arrived while translation was unavailable (signed out, AI down, out of credit) were kept in
+     * Chinese. Translate them as soon as it works again, a batch per check.
+     */
+    private suspend fun retranslate(ctx: Context) {
+        val s = Settings.get(ctx)
+        if (!Translator.on(s)) return
+        val todo = recent.value.filter { it.kind == "news" && it.spoken == null && it.zhTitle.isNotBlank() }.take(20)
+        if (todo.isEmpty()) return
+        val src = todo.map {
+            ApiItem(it.id, it.zhTitle, it.originalTitle, it.zhSummary.ifBlank { null }, it.sourceName, it.aihotUrl, it.originalUrl,
+                it.publishedAt, it.discoveredAt, it.category, it.score, it.why)
+        }
+        val r = Translator.items(src, s)
+        val done = r.filterValues { it.spoken != null }
+        if (done.isEmpty()) return
+        recent.value = recent.value.map { n ->
+            done[n.id]?.let { t -> n.copy(title = t.title, summary = t.summary, why = if (n.why.isNullOrBlank()) null else t.why ?: n.why,
+                spoken = t.spoken, relevance = t.relevance) } ?: n
+        }
+        Log.i(TAG, "retranslated ${done.size} stor${if (done.size == 1) "y" else "ies"}")
+    }
+
     private suspend fun checkStoryUpdates(ctx: Context) {
         val s = Settings.get(ctx)
         val now = System.currentTimeMillis()

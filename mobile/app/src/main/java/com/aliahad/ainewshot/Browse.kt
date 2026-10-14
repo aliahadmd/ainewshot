@@ -84,7 +84,7 @@ object Browse {
         (NewsRepo.recent.value.firstOrNull { it.id == id } ?: NewsRepo.saved.value.firstOrNull { it.id == id })
             ?.takeIf { it.spoken != null }?.let { Rendered(it.title, it.summary, it.why, it.spoken, it.relevance) }
 
-    /** Translations for [src], from the cache where possible; only the rest go to DeepSeek. */
+    /** Translations for [src], from the cache where possible; only the rest go to the AI. */
     suspend fun rendered(ctx: Context, src: List<ApiItem>): Map<String, Rendered> {
         loadCache(ctx)
         val out = mutableMapOf<String, Rendered>()
@@ -107,7 +107,7 @@ object Browse {
         if (todo.isNotEmpty()) {
             val s = Settings.get(ctx)
             val en = Translator.plain(todo, s)
-            if (s.translation == "deepseek" && s.deepseekKey.isNotBlank()) {
+            if (Translator.on(s)) {
                 todo.zip(en).forEach { (zh, e) -> if (e != zh) cache[k(zh)] = Rendered(e, "", null, "", null) }
                 saveCache(ctx)
             }
@@ -197,7 +197,7 @@ object Browse {
 
     private fun translate(ctx: Context, key: String, todo: List<ApiItem>) {
         val s = Settings.get(ctx)
-        if (todo.isEmpty() || s.translation != "deepseek" || s.deepseekKey.isBlank()) return
+        if (todo.isEmpty() || !Translator.on(s)) return
         NewsRepo.appScope.launch {
             val r = rendered(ctx, todo)
             val flow = feed(key)
@@ -216,8 +216,8 @@ object Browse {
         val q = query.trim()
         if (q.length < 2) return@withContext emptyList()
         val queries = mutableListOf(q)
-        if (Translator.isLatin(q) && s.deepseekKey.isNotBlank()) runCatching {
-            val zh = DeepSeek(s.deepseekKey, "deepseek-flash").chat(
+        if (Translator.isLatin(q) && Translator.on(s)) runCatching {
+            val zh = Llm().chat(
                 "Translate this AI-news search query into the short Simplified Chinese keyword(s) a Chinese AI news site would use. " +
                     "Keep product, company and model names in their original form. Reply with the keywords only.", q, json = false, maxTokens = 30)
                 .trim().trim('"', '“', '”')
