@@ -16,6 +16,9 @@ const MAX_INPUT_CHARS = 400_000;
 // Translation and summaries don't need step-by-step reasoning. gpt-oss can't switch it off; "low" keeps it to a
 // sentence or two. (Other families differ: Qwen 3.8 takes enable_thinking:false, DeepSeek V4 reasoning_effort "none".)
 const REASONING = { reasoning_effort: "low" } as const;
+// Reasoning tokens count against the completion limit, so add room for them on top of what the app asks for
+// (otherwise a short answer, e.g. the "Test" ping with 5 tokens, comes back empty).
+const REASONING_HEADROOM = 512;
 
 // Access public keys, cached per isolate (jose refetches when a new key id appears). Not request state.
 const jwksByTeam = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -72,7 +75,7 @@ async function chat(request: Request, env: Env, who: Identity): Promise<Response
 		...(body.system ? [{ role: "system" as const, content: body.system }] : []),
 		{ role: "user" as const, content: body.user },
 	];
-	const maxTokens = Math.min(Math.max(Math.trunc(body.maxTokens ?? 4000), 1), 16_000);
+	const maxTokens = Math.min(Math.max(Math.trunc(body.maxTokens ?? 4000), 1), 16_000) + REASONING_HEADROOM;
 	if (body.stream && !body.json) {
 		// Long texts (articles): stream tokens so the reader sees text within a second or two.
 		try {
