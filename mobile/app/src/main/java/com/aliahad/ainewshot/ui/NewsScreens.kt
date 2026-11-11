@@ -207,21 +207,22 @@ fun SetupBanner(onSetup: () -> Unit) {
         val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumed++ }
         owner.lifecycle.addObserver(o); onDispose { owner.lifecycle.removeObserver(o) }
     }
-    val account by com.aliahad.ainewshot.Cloud.account.collectAsState()
-    if (account == null) {
-        // Signed out: the feed still updates, but in Chinese and without the natural voice.
+    val settings = Settings.get(ctx)
+    val version by settings.version.collectAsState()
+    val nav = LocalNav.current
+    if (settings.keysLoaded && settings.translation != "original" && settings.deepseekKey.isBlank()) {
         Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-            .clickable { ctx.startActivity(android.content.Intent(ctx, com.aliahad.ainewshot.LoginActivity::class.java)) },
+            .clickable { nav.go(Route.Settings) },
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Sign in with your email to read everything in English and hear it read aloud.", Modifier.weight(1f).padding(end = 8.dp),
+                Text("Add your DeepSeek API key to read everything in English.", Modifier.weight(1f).padding(end = 8.dp),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                TextButton(onClick = { ctx.startActivity(android.content.Intent(ctx, com.aliahad.ainewshot.LoginActivity::class.java)) }) { Text("Sign in") }
+                TextButton(onClick = { nav.go(Route.Settings) }) { Text("Set up") }
             }
         }
         return
     }
-    val missing = remember(resumed, account) { Setup.missingCritical(ctx) }
+    val missing = remember(resumed, version) { Setup.missingCritical(ctx) }
     val gaps = NewsRepo.status.collectAsState().value.interruptions.count { it > System.currentTimeMillis() - 86_400_000 }
     if (missing.isEmpty() && gaps == 0) return
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onSetup),

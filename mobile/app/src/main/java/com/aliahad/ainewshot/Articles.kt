@@ -43,11 +43,12 @@ object Articles {
         val flow = MutableStateFlow<List<Piece>>(emptyList())
         NewsRepo.appScope.launch {
             try {
-                val parts = Translator.article(md, Settings.get(ctx), onCount = { n -> flow.value = List(n) { Piece(null, false) } }) { i, t, done ->
+                val result = Translator.article(md, Settings.get(ctx), onCount = { n -> flow.value = List(n) { Piece(null, false) } }) { i, t, done ->
                     flow.update { l -> if (i < l.size) l.toMutableList().also { it[i] = Piece(t, done) } else l }
                 }
-                store(ctx, id, parts.joinToString("\n\n"))
-                flow.value = parts.map { Piece(it, true) }
+                // Fallback source text can be displayed, but must be retried instead of cached as English.
+                if (result.complete) store(ctx, id, result.parts.joinToString("\n\n"))
+                flow.value = result.parts.map { Piece(it, true) }
             } finally { inflight.remove(id) }
         }
         flow

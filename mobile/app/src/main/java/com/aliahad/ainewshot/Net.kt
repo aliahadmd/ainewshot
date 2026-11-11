@@ -1,9 +1,19 @@
 package com.aliahad.ainewshot
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -39,50 +49,61 @@ object Net {
         }
     }
 
-    /** POST with [headers]. Redirects are not followed: for the private backend a redirect means "sign in again". */
-    private fun open(url: String, headers: Map<String, String>, timeoutMs: Int): HttpURLConnection =
-        (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            doOutput = true
-            instanceFollowRedirects = false
-            connectTimeout = 20_000
-            readTimeout = timeoutMs
-            headers.forEach { (k, v) -> setRequestProperty(k, v) }
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("User-Agent", UA)
-        }
+    private val providerClient = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        // DeepSeek owns bounded retries; never silently replay a billed POST here.
+        .retryOnConnectionFailure(false)
+        .build()
 
-    suspend fun postJson(url: String, headers: Map<String, String>, body: JSONObject, timeoutMs: Int = 180_000): JSONObject = withContext(Dispatchers.IO) {
-        val c = open(url, headers, timeoutMs)
-        try {
-            c.outputStream.use { it.write(body.toString().toByteArray()) }
-            val code = c.responseCode
-            if (code != 200) throw HttpError(code, c.errorStream?.bufferedReader()?.use { it.readText() } ?: "")
-            JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-        } finally {
-            c.disconnect()
-        }
-    }
-
-    /** POST and hand every Server-Sent-Events `data:` payload to [onData]. */
+    /** POST and hand each SSE event (including [DONE]) to [onData]. */
     suspend fun postStream(url: String, headers: Map<String, String>, body: JSONObject, timeoutMs: Int = 120_000, onData: (String) -> Unit) =
         withContext(Dispatchers.IO) {
-            val c = open(url, headers, timeoutMs)
-            try {
-                c.outputStream.use { it.write(body.toString().toByteArray()) }
-                val code = c.responseCode
-                if (code != 200) throw HttpError(code, c.errorStream?.bufferedReader()?.use { it.readText() } ?: "")
-                c.inputStream.bufferedReader().useLines { lines ->
-                    for (line in lines) {
-                        coroutineContext.ensureActive()
-                        if (!line.startsWith("data:")) continue
-                        val payload = line.substring(5).trim()
-                        if (payload == "[DONE]") break
-                        onData(payload)
-                    }
+            val request = Request.Builder().url(url).header("User-Agent", UA)
+                .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .apply { headers.forEach { (name, value) -> header(name, value) } }.build()
+            val call = providerClient.newBuilder()
+                .readTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+                .callTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+                .build().newCall(request)
+            coroutineScope {
+                // OkHttp cancellation closes the socket without waiting for a blocked reader's lock.
+                val abort = launch(start = CoroutineStart.UNDISPATCHED) {
+                    try { awaitCancellation() } finally { call.cancel() }
                 }
-            } finally {
-                c.disconnect()
+                val context = coroutineContext
+                try {
+                    call.execute().use { response ->
+                        if (response.code != 200) throw postError(response.code, response.header("Retry-After"))
+                        response.body.charStream().buffered().use { reader ->
+                            Sse.read(reader) { payload ->
+                                context.ensureActive()
+                                onData(payload)
+                            }
+                        }
+                    }
+                } catch (e: IOException) {
+                    context.ensureActive()
+                    throw e
+                } finally { abort.cancel(); call.cancel() }
             }
         }
+
+    private fun postError(code: Int, retryAfter: String?): HttpError {
+        val message = when (code) {
+            401, 403 -> "API key rejected. Check Me › Settings › API keys."
+            402 -> "Insufficient API balance. Top up your provider account."
+            429 -> "Provider rate limit reached. Try again shortly."
+            else -> "Provider request failed. Try again or check your model settings."
+        }
+        val retry = retryAfter?.let { value ->
+            value.toLongOrNull() ?: runCatching {
+                val at = java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
+                ((at - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
+            }.getOrNull()
+        }
+        return HttpError(code, message, retry)
+    }
 }

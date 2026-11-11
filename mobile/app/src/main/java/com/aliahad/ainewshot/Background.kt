@@ -29,7 +29,9 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         Alerts.createChannels(this)
-        Cloud.attach(this)
+        // Retire the old Access session; API keys use a separate, encrypted device store.
+        deleteSharedPreferences("cloud")
+        NewsRepo.appScope.launch { Settings.get(this@App).awaitKeys() }
         NewsRepo.load(this)
         PodcastStudio.load(this)
         PollWorker.schedule(this)

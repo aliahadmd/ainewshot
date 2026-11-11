@@ -217,7 +217,7 @@ object Browse {
         if (q.length < 2) return@withContext emptyList()
         val queries = mutableListOf(q)
         if (Translator.isLatin(q) && Translator.on(s)) runCatching {
-            val zh = Llm().chat(
+            val zh = DeepSeek(s.deepseekKey, s.deepseekModel).chat(
                 "Translate this AI-news search query into the short Simplified Chinese keyword(s) a Chinese AI news site would use. " +
                     "Keep product, company and model names in their original form. Reply with the keywords only.", q, json = false, maxTokens = 30)
                 .trim().trim('"', '“', '”')

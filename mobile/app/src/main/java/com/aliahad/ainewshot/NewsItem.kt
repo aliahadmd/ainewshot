@@ -84,7 +84,8 @@ data class NewsItem(
             title = r?.title ?: a.originalTitle ?: a.title,
             summary = r?.summary ?: a.summary ?: "",
             zhTitle = a.title, zhSummary = a.summary ?: "",
-            originalTitle = a.originalTitle, why = a.reason?.takeIf { it.isNotBlank() }?.let { r?.why ?: it },   // no reason, no line (never invented) spoken = r?.spoken, relevance = r?.relevance,
+            originalTitle = a.originalTitle, why = a.reason?.takeIf { it.isNotBlank() }?.let { r?.why ?: it },   // No source reason: never invent a why-it-matters line.
+            spoken = r?.spoken, relevance = r?.relevance,
             score = a.score, category = a.category, sourceName = AIHot.cleanSource(a.sourceName),
             aihotUrl = a.aihotUrl, originalUrl = a.originalUrl, publishedAt = a.publishedAt,
             discoveredAt = a.discoveredAt ?: System.currentTimeMillis(), tags = a.tags, firstParty = a.firstParty,

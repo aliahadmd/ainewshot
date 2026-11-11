@@ -5,3 +5,6 @@ build/
 # Unrelated empty Xcode template that was already in this folder
 MyApp/
 Untitled Project.xcodeproj/
+
+# Local dependencies/config left by the retired Cloudflare Worker
+/cloud/

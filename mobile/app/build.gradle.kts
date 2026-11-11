@@ -5,8 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// No API keys are built into the app: AI and voice go through the private Cloudflare Worker (../cloud),
-// which you reach by signing in with Cloudflare Access.
+// API keys are entered on the device and encrypted with Android Keystore; none are bundled in the APK.
 val appVersion = rootProject.file("../VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "1.0.0"
 
 // Dedicated signing key (mobile/signing). Published APKs additionally carry a rotation lineage from the old
@@ -63,6 +62,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.okhttp)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -79,4 +79,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
+    // Android's org.json is a stub in local JVM tests; use its real implementation for provider fixtures.
+    testImplementation("org.json:json:20250517")
 }

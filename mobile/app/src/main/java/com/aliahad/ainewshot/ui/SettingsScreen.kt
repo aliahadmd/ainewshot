@@ -92,7 +92,7 @@ fun SettingsScreen(onSetup: () -> Unit, onBack: (() -> Unit)? = null) {
             // Reading `v` makes switches/choices reflect saved values immediately; text fields keep their own state.
             if (v < 0) Text("")
             ReliabilitySection(onSetup, resumed)
-            AccountSection(ctx)
+            KeysSection(ctx, s)
             AlertsSection(ctx, s)
             BriefingsSection(ctx, s)
             VoiceSection(ctx, s)
@@ -100,7 +100,7 @@ fun SettingsScreen(onSetup: () -> Unit, onBack: (() -> Unit)? = null) {
             PodcastSection(ctx, s)
             StorageSection(ctx)
             SectionTitle("About")
-            Text("AI News Hot ${BuildConfig.VERSION_NAME} · news from aihot.news · AI by Cloudflare Workers AI (gpt-oss-20b) · voices by Xiaomi MiMo",
+            Text("AI News Hot ${BuildConfig.VERSION_NAME} · news from aihot.news · AI by DeepSeek · voices by Xiaomi MiMo",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -241,11 +241,12 @@ private fun LanguageSection(s: Settings) {
     s.observe()
     SectionTitle("Language & AI")
     Group("Translate Chinese news with") {
-        val mode = if (s.translation == "original") "original" else "ai"
-        ChoiceRow(null, listOf("ai" to "AI (gpt-oss on Cloudflare)", "original" to "No translation"), mode) { s.translation = it }
-        Hint(if (mode == "ai") "English titles, summaries, full articles and spoken versions. Needs you signed in (Account above)."
+        val mode = if (s.translation == "original") "original" else "deepseek"
+        ChoiceRow(null, listOf("deepseek" to "DeepSeek", "original" to "No translation"), mode) { s.translation = it }
+        Hint(if (mode == "deepseek") "English titles, summaries, full articles and spoken versions. Add your key in API keys above."
             else "Shows the source's own English title when there is one; summaries stay in Chinese.")
     }
+    if (s.translation != "original") ChoiceRow("Translation model", modelOptions, s.deepseekModel) { s.deepseekModel = it }
     Field("About me", s.interestProfile, "", lines = 3) { s.interestProfile = it }
     Hint("Used to personalise Explain and the “for you” score.")
 }
@@ -275,6 +276,7 @@ private fun PodcastSection(ctx: Context, s: Settings) {
         ChoiceRow("Tone", PodStyle.tones.map { it.first to it.second }, s.podTone) { s.podTone = it }
         ChoiceRow("Emotion", listOf(1 to "Subtle", 2 to "Natural", 3 to "Expressive"), s.podExpressiveness) { s.podExpressiveness = it }
         Toggle("Sung intro jingle", "MiMo singing mode.", s.podJingle) { s.podJingle = it }
+        ChoiceRow("Script writer", modelOptions, s.podWriterModel) { s.podWriterModel = it }
     }
     Group(if (s.podFormat == "duo") "Host A" else "Host") {
         Field("Name", s.podHostAName, "") { s.podHostAName = it }
@@ -328,30 +330,60 @@ private fun PodcastSection(ctx: Context, s: Settings) {
     }
 }
 
-/** Your Cloudflare sign-in: it unlocks translation and the natural voice. No API keys anywhere in the app. */
+private val modelOptions = listOf(
+    com.aliahad.ainewshot.DeepSeek.FLASH to "Flash (faster)",
+    com.aliahad.ainewshot.DeepSeek.PRO to "V4 Pro",
+)
+
 @Composable
-private fun AccountSection(ctx: Context) {
+private fun KeysSection(ctx: Context, s: Settings) {
+    s.observe()
     val scope = rememberCoroutineScope()
-    val account by com.aliahad.ainewshot.Cloud.account.collectAsState()
-    var test by remember { mutableStateOf("") }
-    SectionTitle("Account")
-    Group(if (account != null) "Signed in" else "Not signed in") {
-        val a = account
-        if (a != null) {
-            Text(a.email, style = MaterialTheme.typography.bodyLarge)
-            Hint("Session lasts until " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(a.expires)) +
-                ". Translation runs on Cloudflare Workers AI and voices on MiMo, through your private Worker.")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    test = "Testing…"
-                    scope.launch { val (ai, voice) = com.aliahad.ainewshot.Cloud.test(ctx); test = "AI: $ai · Voice: $voice" }
-                }) { Text("Test") }
-                TextButton(onClick = { com.aliahad.ainewshot.Cloud.signOut(); test = "" }) { Text("Sign out") }
-            }
-            if (test.isNotEmpty()) Hint(test)
-        } else {
-            Hint("Sign in with your email (Cloudflare sends a one-time code) to turn on English translation, full articles, Explain, podcasts and the natural voice.")
-            Button(onClick = { ctx.startActivity(android.content.Intent(ctx, com.aliahad.ainewshot.LoginActivity::class.java)) }) { Text("Sign in") }
+    LaunchedEffect(Unit) { s.awaitKeys() }
+    SectionTitle("API keys")
+    if (!s.keysLoaded) { Hint("Loading your keys…"); return }
+    var deepseek by remember(s.keysLoaded) { mutableStateOf(s.deepseekKey) }
+    var mimo by remember(s.keysLoaded) { mutableStateOf(s.mimoKey) }
+    var result by remember { mutableStateOf("") }
+    var testing by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    s.keyLoadError?.let { Hint(it) }
+    Group("DeepSeek & Xiaomi MiMo") {
+        Hint("Add your own keys. DeepSeek handles English and podcasts; MiMo provides the natural voice.")
+        Secret("DeepSeek API key", deepseek) { deepseek = it; result = "" }
+        Secret("Xiaomi MiMo API key", mimo) { mimo = it; result = "" }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(enabled = !saving && !testing, onClick = {
+                saving = true
+                val ds = deepseek; val mm = mimo
+                scope.launch {
+                    try {
+                        s.saveKeys(ds, mm)
+                        result = "Keys saved"
+                        NewsRepo.appScope.launch { NewsRepo.check(ctx.applicationContext, force = true) }
+                    } catch (e: kotlinx.coroutines.CancellationException) { throw e
+                    } catch (_: Exception) { result = "Couldn't save keys. Please try again."
+                    } finally { saving = false }
+                }
+            }) { Text(if (saving) "Saving…" else "Save keys") }
+            OutlinedButton(enabled = !saving && !testing, onClick = {
+                testing = true
+                val ds = deepseek; val mm = mimo
+                result = "Testing…"
+                scope.launch {
+                    try {
+                        val ai = com.aliahad.ainewshot.KeyCheck.deepseek(ds, s.deepseekModel)
+                        val voice = com.aliahad.ainewshot.KeyCheck.mimo(ctx, mm)
+                        result = "DeepSeek: $ai\nMiMo: $voice"
+                    } finally { testing = false }
+                }
+            }) { Text("Test keys") }
+        }
+        if (result.isNotEmpty()) Hint(result)
+        Hint("Tap Save keys after editing. Leave a key empty and save to remove it.")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { ctx.openUrl("https://platform.deepseek.com/api_keys") }) { Text("Get DeepSeek key") }
+            TextButton(onClick = { ctx.openUrl("https://platform.xiaomimimo.com/") }) { Text("Get MiMo key") }
         }
     }
 }
@@ -439,17 +471,9 @@ fun Field(label: String, value: String, placeholder: String, lines: Int = 1, onC
 
 @Composable
 fun Secret(label: String, value: String, onChange: (String) -> Unit) {
-    var local by remember { mutableStateOf(value) }
-    val latest by rememberUpdatedState(local)
-    val save by rememberUpdatedState(onChange)
-    val saved by rememberUpdatedState(value)
-    LaunchedEffect(local) {
-        kotlinx.coroutines.delay(600)
-        if (local.trim() != saved) save(local.trim())
-    }
-    DisposableEffect(Unit) { onDispose { if (latest.trim() != saved) save(latest.trim()) } }
-    OutlinedTextField(local, { local = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
-        singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+    OutlinedTextField(value, onChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
+        singleLine = true, visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
 }
 
 @Composable

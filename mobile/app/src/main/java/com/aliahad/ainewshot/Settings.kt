@@ -3,6 +3,7 @@ package com.aliahad.ainewshot
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -10,6 +11,12 @@ import kotlin.reflect.KProperty
 class Settings private constructor(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
     val version = MutableStateFlow(0)
+    private val credentials = Credentials(ctx, p)
+
+    init {
+        // The Worker build called this mode "ai"; keep its existing on/off choice on upgrade.
+        if (p.getString("translation", null) == "ai") p.edit().putString("translation", "deepseek").apply()
+    }
 
     private fun bool(k: String, d: Boolean) = object : ReadWriteProperty<Any?, Boolean> {
         override fun getValue(thisRef: Any?, property: KProperty<*>) = p.getBoolean(k, d)
@@ -57,7 +64,8 @@ class Settings private constructor(ctx: Context) {
     var quietEnd by int("quietEnd", 7 * 60)
 
     // Translation
-    var translation by str("translation", "ai")           // ai (Workers AI) | original; older "deepseek" means ai
+    var translation by str("translation", "deepseek")     // deepseek | original
+    var deepseekModel by str("deepseekModel", DeepSeek.FLASH)
     var interestProfile by str("interestProfile", "I build apps with AI. I care about frontier model releases (Claude, GPT, Gemini, DeepSeek, Qwen), coding agents and developer tools, open-weight models, and major AI industry moves.")
 
     // Audio
@@ -80,13 +88,24 @@ class Settings private constructor(ctx: Context) {
     var podHostBVoice by str("podHostBVoice", "Dean")
     var podHostBPersona by str("podHostBPersona", "Co-host and analyst. A calm, dry-witted man in his forties; an ex-engineer who adds the 'so what' for builders, asks sharp questions and is healthily sceptical of hype. Lower, relaxed voice.")
     var podJingle by bool("podJingle", false)
+    var podWriterModel by str("podWriterModel", DeepSeek.PRO)
     var podAuto by bool("podAuto", false)
     var podAutoMinutes by int("podAutoMinutes", 7 * 60)
     var podAutoWeeklyOnMonday by bool("podAutoWeeklyOnMonday", true)
     var podSaveToMusic by bool("podSaveToMusic", true)
     var podSpeed by str("podSpeed", "1.0")
 
-    // Keys (seeded from the build on first launch)
+    // Keys are never bundled in BuildConfig, resources, or backups.
+    val deepseekKey get() = credentials.state.deepseek
+    val mimoKey get() = credentials.state.mimo
+    val keysLoaded get() = credentials.state.loaded
+    val keyLoadError get() = credentials.state.error
+
+    suspend fun awaitKeys() { if (credentials.load()) version.update { it + 1 } }
+    suspend fun saveKeys(deepseek: String, mimo: String) {
+        credentials.save(deepseek, mimo)
+        version.update { it + 1 }
+    }
 
     /** Checklist items the app can't read from the system; you confirm them once in Reliability setup. */
     fun confirmed(key: String): Boolean? = if (p.getBoolean("confirmed_$key", false)) true else null

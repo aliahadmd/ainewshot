@@ -147,6 +147,7 @@ object NewsRepo {
         if (!mutex.tryLock()) return@withContext
         try {
             val s = Settings.get(ctx)
+            s.awaitKeys()
             // Watchdog: no check *ran* for 30+ min while live alerts are on => the system froze or killed us.
             // (Failed checks, e.g. no network, still count as running; Doze spaces wake-ups ~10-15 min apart.)
             val prev = lastAttempt
@@ -514,7 +515,7 @@ object NewsRepo {
 
     /** Every ~10 min, ask AIHOT (conditional GET, usually a 304) whether followed stories moved on. */
     /**
-     * Stories that arrived while translation was unavailable (signed out, AI down, out of credit) were kept in
+     * Stories that arrived while translation was unavailable (missing key, AI down, out of credit) were kept in
      * Chinese. Translate them as soon as it works again, a batch per check.
      */
     private suspend fun retranslate(ctx: Context) {

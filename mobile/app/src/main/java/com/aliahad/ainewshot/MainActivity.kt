@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handle(intent: android.content.Intent?) {
         intent ?: return
+        if (intent.getBooleanExtra("settings", false)) openRoute.value = Route.Settings
         intent.getIntExtra("tab", -1).takeIf { it >= 0 }?.let { openTab.intValue = it }
         intent.getStringExtra("episode")?.let { openEpisode.value = it; openTab.intValue = TAB_PODCAST }
         // From the widget / ticker notification: open the article.

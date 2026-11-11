@@ -79,21 +79,22 @@ object Speaker {
     /** Render (or reuse) a validated MiMo clip. Used for alerts and Wi-Fi prefetch. */
     suspend fun prepare(ctx: Context, item: NewsItem): File? {
         val s = Settings.get(ctx)
-        if (s.voiceProvider != "mimo" || !Cloud.signedIn()) return null
+        s.awaitKeys()
+        if (s.voiceProvider != "mimo" || s.mimoKey.isBlank()) return null
         val f = cacheFile(ctx, item.speechText, s)
         if (f.exists()) return f
         return runCatching {
             val pcm = MiMo.checkedPcm(ctx, item.speechText, s.voiceStyle, s.voice)
             f.writeBytes(MiMo.wav(pcm)); f
         }.onSuccess { mimoFailures.value = 0 }
-            .onFailure { Log.w(TAG, "TTS failed", it); mimoFailures.value++; mimoLastError.value = it.message }.getOrNull()
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Log.w(TAG, "TTS failed", it); mimoFailures.value++; mimoLastError.value = it.message }.getOrNull()
     }
 
     /** Pre-render the newest stories on unmetered networks so "Listen" is instant. */
     fun prefetch(ctx: Context, items: List<NewsItem>) {
         val app = ctx.applicationContext
         val s = Settings.get(app)
-        if (prefetchJob?.isActive == true || s.voiceProvider != "mimo" || !Cloud.signedIn()) return
+        if (prefetchJob?.isActive == true || s.voiceProvider != "mimo" || s.mimoKey.isBlank()) return
         val cm = app.getSystemService(ConnectivityManager::class.java)
         if (cm.isActiveNetworkMetered) return
         val todo = items.filter { !isCached(app, it) }
@@ -136,12 +137,13 @@ object Speaker {
         playingId.value = item.id
         job = scope.launch {
             val s = Settings.get(app)
+            s.awaitKeys()
             val cached = cacheFile(app, item.speechText, s).takeIf { it.exists() }
             requestFocus(app)
             try {
                 when {
                     cached != null -> playFile(app, cached)
-                    s.voiceProvider == "mimo" && Cloud.signedIn() -> if (!stream(app, item, s)) speakSystem(app, item)
+                    s.voiceProvider == "mimo" && s.mimoKey.isNotBlank() -> if (!stream(app, item, s)) speakSystem(app, item)
                     else -> speakSystem(app, item)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {

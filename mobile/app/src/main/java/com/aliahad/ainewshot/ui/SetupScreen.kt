@@ -61,9 +61,15 @@ object Setup {
     fun items(ctx: Context): List<SetupItem> {
         val s = Settings.get(ctx)
         val list = mutableListOf(
-            SetupItem("signin", "Signed in to your AI backend", "Sign in once with your email: English translation, full articles, podcasts and the natural voice run on your private Cloudflare Worker.",
-                com.aliahad.ainewshot.Cloud.signedIn(), true) {
-                it.startActivity(android.content.Intent(it, com.aliahad.ainewshot.LoginActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            SetupItem("deepseek", "DeepSeek API key", "English translation, Explain and podcasts use your DeepSeek key. Add it in Settings › API keys.",
+                s.keysLoaded && s.deepseekKey.isNotBlank(), s.translation != "original") {
+                it.startActivity(android.content.Intent(it, com.aliahad.ainewshot.MainActivity::class.java)
+                    .putExtra("settings", true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            },
+            SetupItem("mimo", "MiMo API key", "Add a MiMo key in Settings › API keys for the natural voice. The phone voice is the fallback.",
+                s.keysLoaded && s.mimoKey.isNotBlank(), false) {
+                it.startActivity(android.content.Intent(it, com.aliahad.ainewshot.MainActivity::class.java)
+                    .putExtra("settings", true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP))
             },
             SetupItem("notify", "Notifications allowed", "Without this nothing can reach you.", HyperOS.notificationsEnabled(ctx) && Alerts.canNotify(ctx), true) {
                 HyperOS.channelSettings(it, Alerts.CH_ALERTS)
