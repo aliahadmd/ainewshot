@@ -150,3 +150,13 @@ VERSION                 app version
 ## Data source
 
 The app uses aihot.news's anonymous, read-only API. Personal use is free. Commercial products or redistribution need the site's written permission ([terms](https://aihot.news/terms)). The first-hand feed uses the site's own timeline endpoint, which is undocumented. The app learns which sources are first-hand, so if that endpoint changes it falls back to the official API filtered to those sources.
+
+## License & Copyright
+
+Copyright (C) 2026 Li Labs (LiLabsAI).
+
+This project is free software licensed under the **GNU General Public License v3.0 or later (`GPL-3.0-or-later`)** — see [LICENSE](LICENSE) for the full license text.
+
+- **Study, fork, and contribute:** Anyone is free to read, fork, modify, and share improvements to the source code.
+- **Copyleft protection:** Any distributed binary or derivative work incorporating this code must preserve copyright and license notices and make its complete corresponding source code available under the same GPLv3 terms, preventing closed-source proprietary incorporation.
+- **Third-party APIs & data:** The GPLv3 license covers this repository's source code. News content retrieved from [aihot.news](https://aihot.news) remains subject to [AIHOT's terms](https://aihot.news/terms), and DeepSeek / Xiaomi MiMo integrations use your own API keys under their respective service terms.
