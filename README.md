@@ -8,7 +8,7 @@ An Android app that keeps you up to date on AI. It watches [aihot.news](https://
 
 Requires Android 10 or later. It's tested on a Redmi K80 Pro running HyperOS 4 / Android 17.
 
-1. On the phone, open the latest release on the repo's [Releases page](https://github.com/aliahadmd/ainewshot/releases) and download `AINewsHot-<version>.apk`. You can also copy the APK over from a computer.
+1. On the phone, open the latest release on the repo's [Releases page](https://github.com/LiLabsAI/ainewshot/releases) and download `AINewsHot-<version>.apk`. You can also copy the APK over from a computer.
 2. Open the APK and allow your browser or file manager to install unknown apps. HyperOS may run a security scan first; choose **Install anyway**.
 3. Open **AI News Hot**, allow notifications, then go to **Me › Settings › API keys**, enter your DeepSeek and MiMo keys, tap **Save keys** and **Test keys**. Next open **Me › Reliability setup**. Tap **Fix** on every row until it shows ✓, then use **Send test alert in 20 s** and lock the phone to confirm the alert wakes the screen and speaks.
 

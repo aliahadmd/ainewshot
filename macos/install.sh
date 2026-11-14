@@ -8,7 +8,7 @@
 # browser-downloaded copy. This script removes the quarantine flag so it opens normally.
 set -euo pipefail
 
-REPO="aliahadmd/ainewshot"
+REPO="LiLabsAI/ainewshot"
 DEST="$HOME/Applications"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

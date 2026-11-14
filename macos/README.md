@@ -1,7 +1,7 @@
 # AI News Hot for macOS — deprecated
 
 > **Deprecated (October 2026).** The macOS menu-bar app is no longer maintained. Development continues in the Android app ([`../mobile`](../mobile), see the [main README](../README.md)).
-> The last macOS release is [v1.0.0](https://github.com/aliahadmd/ainewshot/releases/tag/v1.0.0). The code below still builds, but it won't get fixes or new features.
+> The last macOS release is [v1.0.0](https://github.com/LiLabsAI/ainewshot/releases/tag/v1.0.0). The code below still builds, but it won't get fixes or new features.
 
 ## Build & run
 
@@ -21,7 +21,7 @@ Requires macOS 26 or later. Works on Apple Silicon and Intel.
 **Easiest (GitHub CLI):**
 ```bash
 brew install gh && gh auth login
-gh repo clone aliahadmd/ainewshot && cd ainewshot && bash macos/install.sh
+gh repo clone LiLabsAI/ainewshot && cd ainewshot && bash macos/install.sh
 ```
 
 **Manual:**
